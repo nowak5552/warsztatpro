@@ -27,9 +27,9 @@ const calcTotals = items => {
 };
 
 const ROLE_CFG = {
-  admin:    {label:"Administrator",color:T.brand,  bg:T.brandLt,  icon:"👑",modules:["dashboard","orders","docs","warehouse","clients","calendar","reports","ksef","users","settings"]},
-  mechanik: {label:"Mechanik",     color:T.green,  bg:T.greenLt,  icon:"🔧",modules:["dashboard","orders","warehouse","calendar"]},
-  recepcja: {label:"Recepcja",     color:T.purple, bg:T.purpleLt, icon:"📋",modules:["dashboard","orders","docs","clients","calendar","reports"]},
+  admin:    {label:"Administrator",color:T.brand,  bg:T.brandLt,  icon:"👑",modules:["dashboard","orders","docs","warehouse","clients","vehicles","calendar","reports","sms","ksef","users","settings"]},
+  mechanik: {label:"Mechanik",     color:T.green,  bg:T.greenLt,  icon:"🔧",modules:["dashboard","orders","warehouse","vehicles","calendar"]},
+  recepcja: {label:"Recepcja",     color:T.purple, bg:T.purpleLt, icon:"📋",modules:["dashboard","orders","docs","clients","vehicles","calendar","reports"]},
 };
 
 // ── API HELPER ────────────────────────────────────────────────────────────────
@@ -552,6 +552,67 @@ function VehicleHistory({vehicleId,vehicleName,onClose}) {
         </div>
       )}
     </Modal>
+  );
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VEHICLES SCREEN
+// ══════════════════════════════════════════════════════════════════════════════
+function Vehicles({vehicles,setVehicles,clients,setModal,isMobile}) {
+  const [search,setSearch]=useState("");
+  const filtered=vehicles.filter(v=>
+    v.plate.toLowerCase().includes(search.toLowerCase())||
+    v.make.toLowerCase().includes(search.toLowerCase())||
+    v.model.toLowerCase().includes(search.toLowerCase())||
+    (v.vin||"").toLowerCase().includes(search.toLowerCase())
+  );
+
+  const deleteVehicle=async(id,plate)=>{
+    if(!window.confirm("Usunac pojazd "+plate+"?"))return;
+    try {
+      await apiFetch("/vehicles/"+id,{method:"DELETE"});
+      setVehicles(p=>p.filter(v=>v.id!==id));
+    } catch(err){alert("Blad: "+err.message);}
+  };
+
+  return (
+    <div>
+      <SH title="Pojazdy" count={vehicles.length} action={()=>setModal({type:"new_car"})} actionLabel="Dodaj pojazd" actionIcon="+" sub="Wszystkie zarejestrowane pojazdy z VIN i historia serwisowa"/>
+      <div style={{marginBottom:14}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Szukaj po tablicy, marce, modelu lub VIN..." style={{...fldSt}}/>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {filtered.map(v=>{
+          const client=clients.find(c=>c.id===v.client_id);
+          return (
+            <Card key={v.id}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:900,fontSize:18,color:T.brand}}>{v.plate}</span>
+                    <Badge color={T.green} bg={T.greenLt}>{v.fuel_type}</Badge>
+                    {v.year&&<Badge color={T.textMut} bg="#f9fafb">{v.year}</Badge>}
+                  </div>
+                  <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{v.make} {v.model}</div>
+                  <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:T.textMut}}>
+                    {client&&<span>Wlasciciel: <strong style={{color:T.textSm}}>{client.name}</strong></span>}
+                    {v.mileage>0&&<span>Przebieg: <strong>{v.mileage.toLocaleString()} km</strong></span>}
+                    {v.engine&&<span>Silnik: {v.engine}</span>}
+                    {v.color&&<span>Kolor: {v.color}</span>}
+                  </div>
+                  {v.vin&&<div style={{fontSize:12,color:T.textXs,marginTop:4,fontFamily:"monospace"}}>VIN: {v.vin}</div>}
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"flex-start",flexShrink:0}}>
+                  <Btn sm ghost danger onClick={()=>deleteVehicle(v.id,v.plate)}>Usun</Btn>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+        {filtered.length===0&&<div style={{textAlign:"center",color:T.textXs,padding:48,fontSize:15}}>Brak pojazdow. Kliknij "Dodaj pojazd" aby dodac pierwszy pojazd.</div>}
+      </div>
+    </div>
   );
 }
 
@@ -1095,6 +1156,7 @@ export default function App() {
     {id:"docs",     icon:"🧾",label:"Dokumenty"},
     {id:"warehouse",icon:"📦",label:"Magazyn"},
     {id:"clients",  icon:"👤",label:"Klienci"},
+    {id:"vehicles", icon:"🚗",label:"Pojazdy"},
     {id:"calendar", icon:"📅",label:"Kalendarz"},
     {id:"reports",  icon:"📊",label:"Raporty"},
     {id:"sms",      icon:"📱",label:"SMS"},
@@ -1156,6 +1218,7 @@ export default function App() {
           {tab==="docs"      &&<Invoices invoices={invoices} clients={clients} setModal={setModal} isMobile={isMobile}/>}
           {tab==="warehouse" &&<Warehouse {...sp}/>}
           {tab==="clients"   &&<Clients {...sp}/>}
+          {tab==="vehicles"  &&<Vehicles vehicles={vehicles} setVehicles={setVehicles} clients={clients} setModal={setModal} isMobile={isMobile}/>}
           {tab==="calendar"  &&<CalendarView events={calEvents} setEvents={setCalEvents} users={users} vehicles={vehicles} orders={orders} isMobile={isMobile}/>}
           {tab==="reports"   &&<Reports isMobile={isMobile}/>}
           {tab==="sms"       &&<SMSModule clients={clients} orders={orders} isMobile={isMobile}/>}
@@ -1258,15 +1321,33 @@ function NewClientModal({onClose,onSave}) {
     const nip=f.nip.replace(/\D/g,"");
     if(nip.length!==10){setGusMsg({ok:false,txt:"Wpisz poprawny NIP (10 cyfr)"});return;}
     setGusLoading(true);setGusMsg(null);
-    await new Promise(r=>setTimeout(r,900));
-    // Demo – zastap prawdziwym API GUS BIR po uzyskaniu klucza
+    try {
+      // Proba pobrania z publicznego API GUS przez CORS proxy
+      const res=await fetch("https://api.ares.ms/ares/getData?nip="+nip);
+      if(res.ok){
+        const data=await res.json();
+        if(data&&data.nazwa){
+          setF(p=>({...p,
+            name:data.nazwa||p.name,
+            address:(data.ulica||"")+" "+(data.nrNieruchomosci||""),
+            city:(data.kodPocztowy||"")+" "+(data.miejscowosc||""),
+            regon:data.regon||p.regon,
+          }));
+          setGusMsg({ok:true,txt:"Dane pobrane z GUS dla NIP: "+nip});
+          setGusLoading(false);
+          return;
+        }
+      }
+    } catch{}
+    // Fallback – wbudowane przykladowe dane
     const mock={
       "1234567890":{name:"Jan Kowalski Serwis",address:"ul. Lipowa 5",city:"00-001 Warszawa",regon:"123456789"},
       "9876543210":{name:"AUTO SERWIS Nowak Sp. z o.o.",address:"ul. Motorowa 12",city:"30-001 Krakow",regon:"987654321"},
+      "5556667770":{name:"Budowlanka Sp. z o.o.",address:"ul. Ceglana 3",city:"80-001 Gdansk",regon:"555666777"},
     };
     const data=mock[nip]||{name:"Firma "+nip.slice(-4)+" Sp. z o.o.",address:"ul. Przykladowa 1",city:"00-001 Warszawa",regon:nip.slice(0,9)};
     setF(p=>({...p,name:data.name,address:data.address,city:data.city,regon:data.regon}));
-    setGusMsg({ok:true,txt:"Dane pobrane z GUS dla NIP: "+nip});
+    setGusMsg({ok:true,txt:"Dane uzupelnione dla NIP: "+nip+" (pobierz klucz API GUS dla pelnych danych)"});
     setGusLoading(false);
   };
 
