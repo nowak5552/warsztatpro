@@ -34,15 +34,27 @@ const ROLE_CFG = {
 
 // ── API HELPER ────────────────────────────────────────────────────────────────
 async function apiFetch(path, opts={}) {
-  const token = localStorage.getItem("wp_token");
-  const res = await fetch(API+path, {
+  const token = localStorage.getItem("wp_token") || sessionStorage.getItem("wp_token");
+  const headers = {
+    "Content-Type": "application/json",
+    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+    ...(opts.headers || {}),
+  };
+  const res = await fetch(API + path, {
     ...opts,
-    headers: { "Content-Type":"application/json", ...(token?{"Authorization":`Bearer ${token}`}:{}), ...opts.headers },
+    headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
+  if (res.status === 401) {
+    // Token wygasł — wyloguj
+    localStorage.removeItem("wp_token");
+    sessionStorage.removeItem("wp_token");
+    window.location.reload();
+    return;
+  }
   if (!res.ok) {
-    const err = await res.json().catch(()=>({error:"Błąd serwera"}));
-    throw new Error(err.error||"Błąd API");
+    const err = await res.json().catch(() => ({ error: "Błąd serwera" }));
+    throw new Error(err.error || "Błąd API");
   }
   return res.json();
 }
@@ -160,6 +172,7 @@ function LoginPage({onLogin}) {
     try {
       const data = await apiFetch("/auth/login",{method:"POST",body:{email,password}});
       localStorage.setItem("wp_token", data.token);
+      sessionStorage.setItem("wp_token", data.token);
       onLogin(data.user);
     } catch(err){
       setError(err.message||"Błąd logowania");
@@ -1040,9 +1053,13 @@ export default function App() {
 
   // Check existing session
   useEffect(()=>{
-    const token=localStorage.getItem("wp_token");
+    const token=localStorage.getItem("wp_token")||sessionStorage.getItem("wp_token");
     if(token){
-      apiFetch("/auth/me").then(u=>setUser(u)).catch(()=>localStorage.removeItem("wp_token")).finally(()=>setLoading(false));
+      fetch("/api/auth/me",{headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"}})
+        .then(r=>r.ok?r.json():null)
+        .then(u=>{ if(u) setUser(u); else { localStorage.removeItem("wp_token"); sessionStorage.removeItem("wp_token"); } })
+        .catch(()=>{ localStorage.removeItem("wp_token"); sessionStorage.removeItem("wp_token"); })
+        .finally(()=>setLoading(false));
     } else setLoading(false);
   },[]);
 
@@ -1050,14 +1067,19 @@ export default function App() {
   useEffect(()=>{
     if(!user)return;
     const rc=ROLE_CFG[user.role]||{};
-    Promise.all([
-      rc.modules.includes("orders")    ? apiFetch("/orders").then(setOrders)       : Promise.resolve(),
-      rc.modules.includes("clients")   ? apiFetch("/clients").then(setClients)     : Promise.resolve(),
-      rc.modules.includes("clients")   ? apiFetch("/vehicles").then(setVehicles)   : Promise.resolve(),
-      rc.modules.includes("warehouse") ? apiFetch("/parts").then(setParts)         : Promise.resolve(),
-      rc.modules.includes("docs")      ? apiFetch("/invoices").then(setInvoices)   : Promise.resolve(),
-      rc.modules.includes("calendar")  ? apiFetch("/calendar").then(setCalEvents)  : Promise.resolve(),
-    ]).catch(console.error);
+    const token=localStorage.getItem("wp_token")||sessionStorage.getItem("wp_token");
+    const load=(path,setter)=>{
+      fetch("/api"+path,{headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"}})
+        .then(r=>r.ok?r.json():[])
+        .then(setter)
+        .catch(()=>setter([]));
+    };
+    if(rc.modules.includes("orders"))    load("/orders",    setOrders);
+    if(rc.modules.includes("clients"))   load("/clients",   setClients);
+    if(rc.modules.includes("clients"))   load("/vehicles",  setVehicles);
+    if(rc.modules.includes("warehouse")) load("/parts",     setParts);
+    if(rc.modules.includes("docs"))      load("/invoices",  setInvoices);
+    if(rc.modules.includes("calendar"))  load("/calendar",  setCalEvents);
   },[user]);
 
   const handleLogin=(u)=>{ setUser(u); };
@@ -1154,6 +1176,192 @@ export default function App() {
           ))}
         </nav>
       )}
+
+      {/* MODALS */}
+      {modal?.type==="new_order"&&<NewOrderModal clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{const d=await apiFetch("/orders",{method:"POST",body:o});setOrders(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_client"&&<NewClientModal onClose={()=>setModal(null)} onSave={async c=>{try{const d=await apiFetch("/clients",{method:"POST",body:c});setClients(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_car"&&<NewCarModal clients={clients} onClose={()=>setModal(null)} onSave={async v=>{try{const d=await apiFetch("/vehicles",{method:"POST",body:v});setVehicles(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_part"&&<NewPartModal onClose={()=>setModal(null)} onSave={async p=>{try{const d=await apiFetch("/parts",{method:"POST",body:p});setParts(prev=>[...prev,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_invoice"&&<NewInvoiceModal order={modal.order} clients={clients} onClose={()=>setModal(null)} onSave={async inv=>{try{const d=await apiFetch("/invoices",{method:"POST",body:inv});setInvoices(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_doc_standalone"&&<NewInvoiceModal order={null} clients={clients} onClose={()=>setModal(null)} onSave={async inv=>{try{const d=await apiFetch("/invoices",{method:"POST",body:inv});setInvoices(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
     </div>
+  );
+}
+
+// ── MODAL COMPONENTS ──────────────────────────────────────────────────────────
+
+function NewOrderModal({clients,vehicles,users,onClose,onSave}) {
+  const [clientId,setClientId]=useState(clients[0]?.id||"");
+  const [vehicleId,setVehicleId]=useState("");
+  const [mechanicId,setMechanicId]=useState("");
+  const [description,setDescription]=useState("");
+  const [notes,setNotes]=useState("");
+  const [priority,setPriority]=useState("Normalny");
+  const [deadline,setDeadline]=useState(today());
+  const [items,setItems]=useState([{type:"labor",name:"",qty:1,unit_price:100,vat:23}]);
+  const cVehicles=vehicles.filter(v=>v.client_id===+clientId);
+  const mechanics=(users||[]).filter(u=>u.role==="mechanik"||u.role==="admin");
+  const {net,vatAmt,gross}=calcTotals(items);
+  const setItem=(i,k,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[k]:v}:x));
+  return (
+    <Modal title="Nowe zlecenie serwisowe" onClose={onClose} wide>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+        <Field label="Klient *" value={clientId} onChange={v=>{setClientId(v);setVehicleId("");}} options={[{v:"",l:"— wybierz klienta —"},...clients.map(c=>({v:c.id,l:c.name}))]} required/>
+        <Field label="Pojazd" value={vehicleId} onChange={setVehicleId} options={[{v:"",l:"— wybierz pojazd —"},...cVehicles.map(v=>({v:v.id,l:v.make+" "+v.model+" ("+v.plate+")"}))]}/>
+        <Field label="Mechanik" value={mechanicId} onChange={setMechanicId} options={[{v:"",l:"— wybierz mechanika —"},...mechanics.map(u=>({v:u.id,l:u.name}))]}/>
+        <Field label="Priorytet" value={priority} onChange={setPriority} options={["Pilny","Normalny","Niski"]}/>
+        <Field label="Termin realizacji" value={deadline} onChange={setDeadline} type="date"/>
+        <div style={{gridColumn:"1 / -1"}}><Field label="Opis prac *" value={description} onChange={setDescription} placeholder="Krótki opis zlecenia..." required/></div>
+        <div style={{gridColumn:"1 / -1"}}><Field label="Notatki" value={notes} onChange={setNotes} placeholder="Uwagi klienta..." rows={2}/></div>
+      </div>
+      <div style={{fontSize:11,color:T.textMut,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Pozycje zlecenia</div>
+      {items.map((it,i)=>(
+        <div key={i} style={{background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>setItem(i,"type","labor")} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid "+(it.type==="labor"?T.purple:T.border),background:it.type==="labor"?T.purpleLt:T.white,color:it.type==="labor"?T.purple:T.textMut,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:600}}>Robocizna</button>
+              <button onClick={()=>setItem(i,"type","part")} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid "+(it.type==="part"?T.brand:T.border),background:it.type==="part"?T.brandLt:T.white,color:it.type==="part"?T.brand:T.textMut,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:600}}>Czesc</button>
+            </div>
+            <button onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:18}}>x</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 70px",gap:8}}>
+            <Field value={it.name} onChange={v=>setItem(i,"name",v)} placeholder="Nazwa pozycji..."/>
+            <Field value={it.qty} onChange={v=>setItem(i,"qty",+v)} type="number"/>
+            <Field value={it.unit_price} onChange={v=>setItem(i,"unit_price",+v)} type="number"/>
+            <Field value={it.vat} onChange={v=>setItem(i,"vat",+v)} options={["23","8","5","0"]}/>
+          </div>
+        </div>
+      ))}
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <Btn sm outline color={T.purple} onClick={()=>setItems(p=>[...p,{type:"labor",name:"",qty:1,unit_price:100,vat:23}])}>+ Robocizna</Btn>
+        <Btn sm outline color={T.brand} onClick={()=>setItems(p=>[...p,{type:"part",name:"",qty:1,unit_price:0,vat:23}])}>+ Czesc</Btn>
+      </div>
+      <div style={{background:T.brandLt,borderRadius:12,padding:14,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:13,color:T.textMut}}>Netto: {fmt(net)} zl  VAT: {fmt(vatAmt)} zl</span>
+        <span style={{fontWeight:900,color:T.green,fontSize:20}}>Brutto: {fmt(gross)} zl</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave({client_id:+clientId,vehicle_id:+vehicleId||null,mechanic_id:+mechanicId||null,priority,description,notes,date_deadline:deadline,items})} disabled={!description||!clientId}>Utworz zlecenie</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function NewClientModal({onClose,onSave}) {
+  const [f,setF]=useState({name:"",nip:"",phone:"",email:"",address:"",city:"",regon:""});
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+  return (
+    <Modal title="Nowy klient" onClose={onClose}>
+      <div style={{display:"grid",gap:12}}>
+        <Field label="NIP firmy" value={f.nip} onChange={set("nip")} placeholder="0000000000"/>
+        <Field label="Nazwa / Imie i nazwisko *" value={f.name} onChange={set("name")} required/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Telefon" value={f.phone} onChange={set("phone")} type="tel"/>
+          <Field label="E-mail" value={f.email} onChange={set("email")} type="email"/>
+        </div>
+        <Field label="Adres" value={f.address} onChange={set("address")}/>
+        <Field label="Kod pocztowy i miasto" value={f.city} onChange={set("city")}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave(f)} disabled={!f.name}>Dodaj klienta</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function NewCarModal({clients,onClose,onSave}) {
+  const [f,setF]=useState({client_id:clients[0]?.id||"",make:"",model:"",year:2020,plate:"",vin:"",mileage:0,fuel_type:"Benzyna",engine:"",color:""});
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+  return (
+    <Modal title="Dodaj pojazd" onClose={onClose} wide>
+      <div style={{display:"grid",gap:12}}>
+        <Field label="Wlasciciel *" value={f.client_id} onChange={set("client_id")} options={clients.map(c=>({v:c.id,l:c.name}))} required/>
+        <Field label="Numer rejestracyjny *" value={f.plate} onChange={v=>set("plate")(v.toUpperCase())} placeholder="np. WA12345"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Marka *" value={f.make} onChange={set("make")}/>
+          <Field label="Model *" value={f.model} onChange={set("model")}/>
+          <Field label="Rok produkcji" value={f.year} onChange={set("year")} type="number"/>
+          <Field label="Paliwo" value={f.fuel_type} onChange={set("fuel_type")} options={["Benzyna","Diesel","Hybryda","Elektryczny","LPG","CNG"]}/>
+          <Field label="Silnik / Moc" value={f.engine} onChange={set("engine")}/>
+          <Field label="Kolor" value={f.color} onChange={set("color")}/>
+          <Field label="Przebieg (km)" value={f.mileage} onChange={set("mileage")} type="number"/>
+        </div>
+        <Field label="VIN" value={f.vin} onChange={set("vin")}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave(f)} disabled={!f.make||!f.model||!f.plate}>Dodaj pojazd</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function NewPartModal({onClose,onSave}) {
+  const [f,setF]=useState({catalog_no:"",name:"",unit:"szt",buy_price:0,sell_price:0,vat:23,stock:0,min_stock:2,category:"Ogolne",supplier:""});
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+  return (
+    <Modal title="Nowa czesc / towar" onClose={onClose}>
+      <div style={{display:"grid",gap:12}}>
+        <Field label="Nazwa *" value={f.name} onChange={set("name")} required/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Nr katalogowy" value={f.catalog_no} onChange={set("catalog_no")}/>
+          <Field label="Kategoria" value={f.category} onChange={set("category")} options={["Filtry","Oleje","Hamulce","Rozrzad","Zaplon","Zawieszenie","Elektryka","Ogolne"]}/>
+          <Field label="Cena zakupu netto (zl)" value={f.buy_price} onChange={set("buy_price")} type="number"/>
+          <Field label="Cena sprzedazy netto (zl)" value={f.sell_price} onChange={set("sell_price")} type="number"/>
+          <Field label="Stawka VAT (%)" value={f.vat} onChange={set("vat")} options={["23","8","5","0"]}/>
+          <Field label="Jednostka" value={f.unit} onChange={set("unit")} options={["szt","kpl","L","kg","m"]}/>
+          <Field label="Stan magazynowy" value={f.stock} onChange={set("stock")} type="number"/>
+          <Field label="Stan minimalny" value={f.min_stock} onChange={set("min_stock")} type="number"/>
+        </div>
+        <Field label="Dostawca" value={f.supplier} onChange={set("supplier")}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave(f)} disabled={!f.name}>Dodaj czesc</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function NewInvoiceModal({order,clients,onClose,onSave}) {
+  const [type,setType]=useState("faktura_vat");
+  const [clientId,setClientId]=useState(order?.client_id||clients[0]?.id||"");
+  const [payment,setPayment]=useState("Przelew");
+  const [dateDue,setDateDue]=useState(()=>{const d=new Date();d.setDate(d.getDate()+14);return d.toISOString().slice(0,10);});
+  const [notes,setNotes]=useState("");
+  const items=order?.items||[];
+  const {net,vatAmt,gross}=calcTotals(items);
+  const types=[{v:"faktura_vat",l:"Faktura VAT"},{v:"faktura_marza",l:"VAT Marza"},{v:"paragon",l:"Paragon"},{v:"wz",l:"WZ"}];
+  return (
+    <Modal title="Wystaw dokument sprzedazy" onClose={onClose}>
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        {types.map(t=>(
+          <button key={t.v} onClick={()=>setType(t.v)} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+(type===t.v?T.brand:T.border),background:type===t.v?T.brandLt:T.white,color:type===t.v?T.brand:T.textMut,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+      <div style={{display:"grid",gap:12,marginBottom:14}}>
+        <Field label="Klient" value={clientId} onChange={setClientId} options={clients.map(c=>({v:c.id,l:c.name}))}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Data wystawienia" value={today()} onChange={()=>{}} type="date"/>
+          <Field label="Termin platnosci" value={dateDue} onChange={setDateDue} type="date"/>
+        </div>
+        <Field label="Forma platnosci" value={payment} onChange={setPayment} options={["Przelew","Gotowka","Karta","BLIK"]}/>
+        <Field label="Uwagi" value={notes} onChange={setNotes} rows={2}/>
+      </div>
+      <div style={{background:T.brandLt,borderRadius:12,padding:14,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:13,color:T.textMut}}>Netto: {fmt(net)} zl  VAT: {fmt(vatAmt)} zl</span>
+        <span style={{fontWeight:900,color:T.green,fontSize:18}}>{fmt(gross)} zl</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave({type,client_id:+clientId,order_id:order?.id||null,buyer_name:clients.find(c=>c.id===+clientId)?.name,buyer_nip:clients.find(c=>c.id===+clientId)?.nip,date_issued:today(),date_sale:today(),date_due:dateDue,payment,net,vat_amt:vatAmt,gross,notes,items})}>
+          Wystaw dokument
+        </Btn>
+      </div>
+    </Modal>
   );
 }
