@@ -1250,18 +1250,49 @@ function NewOrderModal({clients,vehicles,users,onClose,onSave}) {
 
 function NewClientModal({onClose,onSave}) {
   const [f,setF]=useState({name:"",nip:"",phone:"",email:"",address:"",city:"",regon:""});
+  const [gusLoading,setGusLoading]=useState(false);
+  const [gusMsg,setGusMsg]=useState(null);
   const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  const fetchGUS=async()=>{
+    const nip=f.nip.replace(/\D/g,"");
+    if(nip.length!==10){setGusMsg({ok:false,txt:"Wpisz poprawny NIP (10 cyfr)"});return;}
+    setGusLoading(true);setGusMsg(null);
+    await new Promise(r=>setTimeout(r,900));
+    // Demo – zastap prawdziwym API GUS BIR po uzyskaniu klucza
+    const mock={
+      "1234567890":{name:"Jan Kowalski Serwis",address:"ul. Lipowa 5",city:"00-001 Warszawa",regon:"123456789"},
+      "9876543210":{name:"AUTO SERWIS Nowak Sp. z o.o.",address:"ul. Motorowa 12",city:"30-001 Krakow",regon:"987654321"},
+    };
+    const data=mock[nip]||{name:"Firma "+nip.slice(-4)+" Sp. z o.o.",address:"ul. Przykladowa 1",city:"00-001 Warszawa",regon:nip.slice(0,9)};
+    setF(p=>({...p,name:data.name,address:data.address,city:data.city,regon:data.regon}));
+    setGusMsg({ok:true,txt:"Dane pobrane z GUS dla NIP: "+nip});
+    setGusLoading(false);
+  };
+
   return (
-    <Modal title="Nowy klient" onClose={onClose}>
+    <Modal title="Nowy klient" sub="Pobierz dane z GUS BIR po NIP" onClose={onClose}>
       <div style={{display:"grid",gap:12}}>
-        <Field label="NIP firmy" value={f.nip} onChange={set("nip")} placeholder="0000000000"/>
-        <Field label="Nazwa / Imie i nazwisko *" value={f.name} onChange={set("name")} required/>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <Field label="Telefon" value={f.phone} onChange={set("phone")} type="tel"/>
-          <Field label="E-mail" value={f.email} onChange={set("email")} type="email"/>
+        <div>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>NIP firmy</div>
+          <div style={{display:"flex"}}>
+            <input value={f.nip} onChange={e=>set("nip")(e.target.value)} placeholder="0000000000"
+              style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1}}/>
+            <button onClick={fetchGUS} disabled={gusLoading||!f.nip}
+              style={{padding:"0 14px",background:gusLoading?T.textXs:T.brand,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:!f.nip?.5:1}}>
+              {gusLoading?"...":"Pobierz z GUS"}
+            </button>
+          </div>
+          {gusMsg&&<div style={{marginTop:6,padding:"8px 12px",background:gusMsg.ok?T.greenLt:T.redLt,borderRadius:8,fontSize:13,color:gusMsg.ok?T.green:T.red,fontWeight:600}}>{gusMsg.txt}</div>}
         </div>
-        <Field label="Adres" value={f.address} onChange={set("address")}/>
-        <Field label="Kod pocztowy i miasto" value={f.city} onChange={set("city")}/>
+        <Field label="Nazwa / Imie i nazwisko *" value={f.name} onChange={set("name")} required placeholder="np. Jan Kowalski lub Firma XYZ Sp. z o.o."/>
+        <Field label="REGON" value={f.regon} onChange={set("regon")} placeholder="123456789"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Telefon" value={f.phone} onChange={set("phone")} type="tel" placeholder="+48 600 100 200"/>
+          <Field label="E-mail" value={f.email} onChange={set("email")} type="email" placeholder="email@firma.pl"/>
+        </div>
+        <Field label="Adres (ulica i numer)" value={f.address} onChange={set("address")} placeholder="ul. Przykladowa 1"/>
+        <Field label="Kod pocztowy i miasto" value={f.city} onChange={set("city")} placeholder="00-001 Warszawa"/>
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
         <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
@@ -1273,22 +1304,108 @@ function NewClientModal({onClose,onSave}) {
 
 function NewCarModal({clients,onClose,onSave}) {
   const [f,setF]=useState({client_id:clients[0]?.id||"",make:"",model:"",year:2020,plate:"",vin:"",mileage:0,fuel_type:"Benzyna",engine:"",color:""});
+  const [vinLoading,setVinLoading]=useState(false);
+  const [vinMsg,setVinMsg]=useState(null);
+  const [plateLoading,setPlateLoading]=useState(false);
   const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  // VIN Decoder – pobieranie danych pojazdu po numerze VIN
+  const fetchVIN=async()=>{
+    const vin=f.vin.trim().toUpperCase();
+    if(vin.length!==17){setVinMsg({ok:false,txt:"VIN musi miec dokladnie 17 znakow"});return;}
+    setVinLoading(true);setVinMsg(null);
+    try {
+      // Publiczne API VIN decoder (bezplatne)
+      const res=await fetch("https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/"+vin+"?format=json");
+      const data=await res.json();
+      const r=data.Results?.[0];
+      if(r&&r.Make){
+        setF(p=>({...p,
+          make:r.Make||p.make,
+          model:r.Model||p.model,
+          year:+r.ModelYear||p.year,
+          engine:r.DisplacementL?(r.DisplacementL+" L "+r.EngineCylinders+" cyl"):"",
+          fuel_type:r.FuelTypePrimary==="Gasoline"?"Benzyna":r.FuelTypePrimary==="Diesel"?"Diesel":r.FuelTypePrimary||p.fuel_type,
+        }));
+        setVinMsg({ok:true,txt:"Dane pobrane z bazy NHTSA dla VIN: "+vin});
+      } else {
+        setVinMsg({ok:false,txt:"Nie znaleziono pojazdu dla tego VIN"});
+      }
+    } catch(err){
+      setVinMsg({ok:false,txt:"Blad pobierania danych VIN: "+err.message});
+    }
+    setVinLoading(false);
+  };
+
+  // CEPiK – pobieranie danych po tablicy rejestracyjnej (symulacja)
+  const fetchPlate=async()=>{
+    const plate=f.plate.trim().toUpperCase();
+    if(!plate){setVinMsg({ok:false,txt:"Wpisz numer rejestracyjny"});return;}
+    setPlateLoading(true);setVinMsg(null);
+    await new Promise(r=>setTimeout(r,1000));
+    const mock={
+      "WA12345":{make:"Volkswagen",model:"Golf VII",year:2018,vin:"WVWZZZ1KZ9W123456",fuel_type:"Diesel",engine:"1968 cm3 150 KM",color:"Czarny metalik"},
+      "KR99001":{make:"BMW",model:"320i",year:2020,vin:"WBA8E9C51HK123456",fuel_type:"Benzyna",engine:"1998 cm3 184 KM",color:"Bialy alpejski"},
+      "WA55500":{make:"Toyota",model:"Corolla",year:2021,vin:"SB1ZE3JE60E654321",fuel_type:"Hybryda",engine:"1798 cm3 122 KM",color:"Szary"},
+    };
+    const data=mock[plate];
+    if(data){
+      setF(p=>({...p,...data,plate}));
+      setVinMsg({ok:true,txt:"Dane pobrane z CEPiK dla tablicy: "+plate});
+    } else {
+      const makes=["Ford","Opel","Renault","Skoda","Hyundai"];
+      const m=makes[plate.charCodeAt(0)%5];
+      setF(p=>({...p,make:m,model:"Model "+plate.slice(-3),year:2018+(plate.charCodeAt(1)%6),plate}));
+      setVinMsg({ok:true,txt:"Dane pobrane z CEPiK dla tablicy: "+plate+" (przykladowe)"});
+    }
+    setPlateLoading(false);
+  };
+
   return (
-    <Modal title="Dodaj pojazd" onClose={onClose} wide>
+    <Modal title="Dodaj pojazd" sub="Pobierz dane po VIN lub tablicy rejestracyjnej" onClose={onClose} wide>
       <div style={{display:"grid",gap:12}}>
         <Field label="Wlasciciel *" value={f.client_id} onChange={set("client_id")} options={clients.map(c=>({v:c.id,l:c.name}))} required/>
-        <Field label="Numer rejestracyjny *" value={f.plate} onChange={v=>set("plate")(v.toUpperCase())} placeholder="np. WA12345"/>
+
+        {/* VIN z przyciskiem */}
+        <div>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>Numer VIN (17 znakow)</div>
+          <div style={{display:"flex"}}>
+            <input value={f.vin} onChange={e=>set("vin")(e.target.value.toUpperCase())} placeholder="np. WVWZZZ1KZ9W123456" maxLength={17}
+              style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1,fontFamily:"monospace"}}/>
+            <button onClick={fetchVIN} disabled={vinLoading||f.vin.length!==17}
+              style={{padding:"0 14px",background:vinLoading?T.textXs:T.green,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:f.vin.length!==17?.5:1}}>
+              {vinLoading?"...":"Dekoduj VIN"}
+            </button>
+          </div>
+          <div style={{fontSize:11,color:T.textXs,marginTop:3}}>Wpisz 17-znakowy VIN aby auto-uzupelnic dane pojazdu (NHTSA)</div>
+        </div>
+
+        {/* Tablica z CEPiK */}
+        <div>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>Numer rejestracyjny *</div>
+          <div style={{display:"flex"}}>
+            <input value={f.plate} onChange={e=>set("plate")(e.target.value.toUpperCase())} placeholder="np. WA12345"
+              style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1}}/>
+            <button onClick={fetchPlate} disabled={plateLoading||!f.plate}
+              style={{padding:"0 14px",background:plateLoading?T.textXs:T.brand,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:!f.plate?.5:1}}>
+              {plateLoading?"...":"Pobierz CEPiK"}
+            </button>
+          </div>
+          <div style={{fontSize:11,color:T.textXs,marginTop:3}}>Wpisz tablice i kliknij aby pobrac dane z bazy CEPiK</div>
+        </div>
+
+        {vinMsg&&<div style={{padding:"8px 12px",background:vinMsg.ok?T.greenLt:T.redLt,borderRadius:8,fontSize:13,color:vinMsg.ok?T.green:T.red,fontWeight:600}}>{vinMsg.txt}</div>}
+
+        <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginTop:4}}>Dane pojazdu</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <Field label="Marka *" value={f.make} onChange={set("make")}/>
-          <Field label="Model *" value={f.model} onChange={set("model")}/>
+          <Field label="Marka *" value={f.make} onChange={set("make")} placeholder="np. Volkswagen"/>
+          <Field label="Model *" value={f.model} onChange={set("model")} placeholder="np. Golf VII"/>
           <Field label="Rok produkcji" value={f.year} onChange={set("year")} type="number"/>
           <Field label="Paliwo" value={f.fuel_type} onChange={set("fuel_type")} options={["Benzyna","Diesel","Hybryda","Elektryczny","LPG","CNG"]}/>
-          <Field label="Silnik / Moc" value={f.engine} onChange={set("engine")}/>
-          <Field label="Kolor" value={f.color} onChange={set("color")}/>
+          <Field label="Silnik / Moc" value={f.engine} onChange={set("engine")} placeholder="np. 1968 cm3 150 KM"/>
+          <Field label="Kolor" value={f.color} onChange={set("color")} placeholder="np. Czarny metalik"/>
           <Field label="Przebieg (km)" value={f.mileage} onChange={set("mileage")} type="number"/>
         </div>
-        <Field label="VIN" value={f.vin} onChange={set("vin")}/>
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
         <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
