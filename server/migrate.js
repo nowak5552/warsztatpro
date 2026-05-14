@@ -11,6 +11,25 @@ async function migrate() {
   console.log("🗄️  Migracja bazy danych WarsztatPro...");
 
   await pool.query(`
+    -- USTAWIENIA FIRMY
+    CREATE TABLE IF NOT EXISTS settings (
+      id          INTEGER PRIMARY KEY DEFAULT 1,
+      name        VARCHAR(200),
+      nip         VARCHAR(20),
+      address     VARCHAR(200),
+      city        VARCHAR(100),
+      phone       VARCHAR(30),
+      email       VARCHAR(100),
+      bank        VARCHAR(50),
+      ksef_nip    VARCHAR(20),
+      ksef_token  TEXT,
+      updated_at  TIMESTAMP DEFAULT NOW(),
+      CONSTRAINT single_row CHECK (id = 1)
+    );
+
+    -- Domyślne ustawienia (puste – admin wypełni)
+    INSERT INTO settings (id) VALUES (1) ON CONFLICT DO NOTHING;
+
     -- UŻYTKOWNICY
     CREATE TABLE IF NOT EXISTS users (
       id          SERIAL PRIMARY KEY,
