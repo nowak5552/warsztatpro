@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   WarsztatPro v2.0  ·  Pełna aplikacja z backendem
+   WarsztatPro v3.0  ·  Pełna aplikacja z backendem
    Moduły: Logowanie · Zlecenia · Faktury · Magazyn · Klienci · 
            Kalendarz · Historia pojazdów · Raporty · SMS · KSeF
 ═══════════════════════════════════════════════════════════════════════════ */
@@ -247,7 +247,7 @@ function LoginPage({onLogin}) {
             ))}
           </div>
         </div>
-        <div style={{textAlign:"center",marginTop:20,fontSize:12,color:"rgba(255,255,255,.3)"}}>WarsztatPro v2.0 · mod4cars.eu · 🔒 SSL</div>
+        <div style={{textAlign:"center",marginTop:20,fontSize:12,color:"rgba(255,255,255,.3)"}}>WarsztatPro v3.0 · mod4cars.eu · 🔒 SSL</div>
       </div>
     </div>
   );
