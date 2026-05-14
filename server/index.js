@@ -154,6 +154,15 @@ app.post("/api/vehicles", auth(), async (req, res) => {
   res.json(rows[0]);
 });
 
+app.put("/api/vehicles/:id", auth(), async (req, res) => {
+  const { make, model, year, plate, vin, mileage, fuel_type, engine, color, client_id } = req.body;
+  await pool.query(
+    "UPDATE vehicles SET make=$1,model=$2,year=$3,plate=$4,vin=$5,mileage=$6,fuel_type=$7,engine=$8,color=$9,client_id=$10 WHERE id=$11",
+    [make, model, year, plate, vin, mileage, fuel_type, engine, color, client_id, req.params.id]
+  );
+  res.json({ ok: true });
+});
+
 app.delete("/api/vehicles/:id", auth(["admin"]), async (req, res) => {
   await pool.query("DELETE FROM vehicles WHERE id=$1", [req.params.id]);
   res.json({ ok: true });
