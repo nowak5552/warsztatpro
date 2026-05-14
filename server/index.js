@@ -558,6 +558,60 @@ app.get("/api/cepik/:plate", auth(), async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// AUTOPARTNER B2B API
+// ══════════════════════════════════════════════════════════════════════════════
+app.get("/api/autopartner/search", auth(), async (req, res) => {
+  const q = req.query.q || "";
+  if (!q) return res.status(400).json({ error: "Podaj fraze do wyszukania" });
+
+  // Sprawdz czy sa dane API
+  if (!process.env.AP_LOGIN || !process.env.AP_PASSWORD) {
+    return res.json({
+      ok: false,
+      error: "Brak konfiguracji AutoPartner API. Dodaj AP_LOGIN i AP_PASSWORD do pliku .env na serwerze.",
+      demo: true,
+    });
+  }
+
+  try {
+    // Autentykacja AutoPartner
+    const authRes = await fetch((process.env.AP_URL||"https://api.autopartner.net")+"/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login: process.env.AP_LOGIN, password: process.env.AP_PASSWORD }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!authRes.ok) throw new Error("Blad autentykacji AutoPartner: "+authRes.status);
+    const authData = await authRes.json();
+    const token = authData.token || authData.access_token;
+
+    // Wyszukiwanie czesci
+    const searchRes = await fetch(
+      (process.env.AP_URL||"https://api.autopartner.net")+"/catalog/products?search="+encodeURIComponent(q)+"&limit=20",
+      { headers: { "Authorization": "Bearer "+token }, signal: AbortSignal.timeout(8000) }
+    );
+
+    if (!searchRes.ok) throw new Error("Blad wyszukiwania: "+searchRes.status);
+    const searchData = await searchRes.json();
+
+    // Mapowanie odpowiedzi AutoPartner na nasz format
+    const parts = (searchData.items || searchData.products || searchData.data || []).map(p => ({
+      catalog_no: p.catalogNumber || p.catalog_no || p.partNumber || "",
+      name:       p.name || p.description || "",
+      category:   p.category?.name || p.categoryName || "",
+      price_buy:  +(p.priceNet || p.price_net || p.price || 0),
+      price_sell: +((p.priceNet || p.price_net || p.price || 0) * 1.3).toFixed(2),
+      stock:      +(p.stock || p.quantity || p.availableQuantity || 0),
+    }));
+
+    res.json({ ok: true, parts, count: parts.length });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SETTINGS – dane firmy zapisywane w bazie
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/api/settings", auth(), async (req, res) => {
