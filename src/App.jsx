@@ -669,24 +669,68 @@ function Vehicles({vehicles,setVehicles,clients,setModal,isMobile}) {
 // ══════════════════════════════════════════════════════════════════════════════
 // CLIENTS
 // ══════════════════════════════════════════════════════════════════════════════
+function EditClientModal({client,onClose,onSave}) {
+  const [f,setF]=useState({...client});
+  const [saving,setSaving]=useState(false);
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  const save=async()=>{
+    setSaving(true);
+    try {
+      await apiFetch("/clients/"+client.id,{method:"PUT",body:f});
+      onSave({...f,id:client.id});
+      onClose();
+    } catch(err){alert("Blad: "+err.message);}
+    setSaving(false);
+  };
+
+  return (
+    <Modal title="Edytuj klienta" sub={client.name} onClose={onClose}>
+      <div style={{display:"grid",gap:12}}>
+        <Field label="Nazwa / Imie i nazwisko *" value={f.name} onChange={set("name")} required/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="NIP" value={f.nip||""} onChange={set("nip")} placeholder="0000000000"/>
+          <Field label="REGON" value={f.regon||""} onChange={set("regon")} placeholder="123456789"/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Telefon" value={f.phone||""} onChange={set("phone")} type="tel"/>
+          <Field label="E-mail" value={f.email||""} onChange={set("email")} type="email"/>
+        </div>
+        <Field label="Adres" value={f.address||""} onChange={set("address")} placeholder="ul. Przykladowa 1"/>
+        <Field label="Kod pocztowy i miasto" value={f.city||""} onChange={set("city")} placeholder="00-001 Warszawa"/>
+        <Field label="Notatki" value={f.notes||""} onChange={set("notes")} rows={2}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={save} loading={saving} disabled={!f.name}>Zapisz zmiany</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function Clients({clients,setClients,vehicles,setModal,isMobile}) {
   const [search,setSearch]=useState("");
   const [historyVehicle,setHistoryVehicle]=useState(null);
-  const filtered=clients.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())||(c.nip||"").includes(search));
+  const [editClient,setEditClient]=useState(null);
+  const filtered=clients.filter(c=>
+    c.name.toLowerCase().includes(search.toLowerCase())||
+    (c.nip||"").includes(search)||
+    (c.phone||"").includes(search)
+  );
 
   const deleteClient=async(id,name)=>{
-    if(!window.confirm(`Usunąć klienta ${name}?`))return;
+    if(!window.confirm("Usunac klienta "+name+"?"))return;
     try {
-      await apiFetch(`/clients/${id}`,{method:"DELETE"});
+      await apiFetch("/clients/"+id,{method:"DELETE"});
       setClients(p=>p.filter(c=>c.id!==id));
-    } catch(err){alert("Błąd: "+err.message);}
+    } catch(err){alert("Blad: "+err.message);}
   };
 
   return (
     <div>
-      <SH title="Klienci i pojazdy" count={clients.length} action={()=>setModal({type:"new_client"})} actionLabel="Nowy klient" sub="Baza klientów z kartami pojazdów"/>
+      <SH title="Klienci" count={clients.length} action={()=>setModal({type:"new_client"})} actionLabel="Nowy klient" sub="Baza klientow — kliknij aby edytowac"/>
       <div style={{marginBottom:14}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Szukaj po nazwie lub NIP…" style={{...fldSt}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Szukaj po nazwie, NIP lub telefonie..." style={{...fldSt}}/>
       </div>
       {filtered.map(c=>{
         const cVehicles=vehicles.filter(v=>v.client_id===c.id);
@@ -696,21 +740,25 @@ function Clients({clients,setClients,vehicles,setModal,isMobile}) {
               <div style={{flex:1}}>
                 <div style={{fontWeight:900,fontSize:16,marginBottom:6}}>{c.name}</div>
                 <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:T.textMut}}>
-                  {c.nip&&<span>🏢 NIP: <strong>{c.nip}</strong></span>}
-                  {c.phone&&<span>📞 {c.phone}</span>}
-                  {c.email&&<span>✉ {c.email}</span>}
-                  {c.city&&<span>📍 {c.address}, {c.city}</span>}
+                  {c.nip&&<span>NIP: <strong>{c.nip}</strong></span>}
+                  {c.phone&&<span>Tel: <strong>{c.phone}</strong></span>}
+                  {c.email&&<span>{c.email}</span>}
+                  {c.city&&<span>{c.address}, {c.city}</span>}
                 </div>
+                {c.notes&&<div style={{fontSize:12,color:T.textXs,marginTop:4}}>{c.notes}</div>}
               </div>
-              <Btn sm ghost danger onClick={()=>deleteClient(c.id,c.name)}>🗑️</Btn>
+              <div style={{display:"flex",gap:8,flexShrink:0}}>
+                <Btn sm outline color={T.brand} onClick={()=>setEditClient(c)}>Edytuj</Btn>
+                <Btn sm ghost danger onClick={()=>deleteClient(c.id,c.name)}>Usun</Btn>
+              </div>
             </div>
             {cVehicles.length>0&&(
               <div style={{marginTop:12,display:"flex",gap:8,flexWrap:"wrap"}}>
                 {cVehicles.map(v=>(
-                  <div key={v.id} style={{background:T.brandLt,border:`1px solid ${T.brand}22`,borderRadius:9,padding:"7px 13px",fontSize:12,color:T.brand,cursor:"pointer",display:"flex",gap:8,alignItems:"center"}}
+                  <div key={v.id} style={{background:T.brandLt,border:"1px solid "+T.brand+"22",borderRadius:9,padding:"7px 13px",fontSize:12,color:T.brand,cursor:"pointer",display:"flex",gap:8,alignItems:"center"}}
                     onClick={()=>setHistoryVehicle(v)}>
-                    🚗 <strong>{v.make} {v.model}</strong> · {v.plate} · {v.year}
-                    <span style={{fontSize:10,color:T.brand,opacity:.7}}>📋 historia</span>
+                    🚗 <strong>{v.make} {v.model}</strong> · {v.plate} {v.year?"("+v.year+")":""}
+                    <span style={{fontSize:10,opacity:.7}}>historia</span>
                   </div>
                 ))}
               </div>
@@ -718,8 +766,16 @@ function Clients({clients,setClients,vehicles,setModal,isMobile}) {
           </Card>
         );
       })}
+      {filtered.length===0&&<div style={{textAlign:"center",color:T.textXs,padding:40}}>Brak klientow</div>}
       {historyVehicle&&(
-        <VehicleHistory vehicleId={historyVehicle.id} vehicleName={`${historyVehicle.make} ${historyVehicle.model} (${historyVehicle.plate})`} onClose={()=>setHistoryVehicle(null)}/>
+        <VehicleHistory vehicleId={historyVehicle.id} vehicleName={historyVehicle.make+" "+historyVehicle.model+" ("+historyVehicle.plate+")"} onClose={()=>setHistoryVehicle(null)}/>
+      )}
+      {editClient&&(
+        <EditClientModal
+          client={editClient}
+          onClose={()=>setEditClient(null)}
+          onSave={(updated)=>setClients(p=>p.map(c=>c.id===updated.id?{...c,...updated}:c))}
+        />
       )}
     </div>
   );
@@ -911,55 +967,175 @@ function SMSModule({clients,orders,isMobile}) {
 // ══════════════════════════════════════════════════════════════════════════════
 function Warehouse({parts,setParts,setModal,isMobile}) {
   const [search,setSearch]=useState("");
+  const [apSearch,setApSearch]=useState("");
+  const [apResults,setApResults]=useState([]);
+  const [apLoading,setApLoading]=useState(false);
+  const [apMsg,setApMsg]=useState(null);
+  const [activeTab,setActiveTab]=useState("magazyn");
   const filtered=parts.filter(p=>p.name.toLowerCase().includes(search.toLowerCase())||(p.catalog_no||"").toLowerCase().includes(search.toLowerCase()));
 
   const deletePart=async(id,name)=>{
-    if(!window.confirm(`Usunąć ${name}?`))return;
+    if(!window.confirm("Usunac "+name+"?"))return;
     try {
-      await apiFetch(`/parts/${id}`,{method:"DELETE"});
+      await apiFetch("/parts/"+id,{method:"DELETE"});
       setParts(p=>p.filter(x=>x.id!==id));
-    } catch(err){alert("Błąd: "+err.message);}
+    } catch(err){alert("Blad: "+err.message);}
+  };
+
+  const searchAutoPartner=async()=>{
+    if(!apSearch){return;}
+    setApLoading(true);setApMsg(null);setApResults([]);
+    try {
+      const data=await apiFetch("/autopartner/search?q="+encodeURIComponent(apSearch));
+      if(data.ok&&data.parts){
+        setApResults(data.parts);
+        setApMsg({ok:true,txt:"Znaleziono "+data.parts.length+" czesci w AutoPartner"});
+      } else {
+        setApMsg({ok:false,txt:data.error||"Nie znaleziono czesci"});
+      }
+    } catch(err){
+      setApMsg({ok:false,txt:"Blad: "+err.message+". Skonfiguruj klucz AutoPartner API w ustawieniach serwera."});
+    }
+    setApLoading(false);
+  };
+
+  const importPart=async(part)=>{
+    try {
+      const d=await apiFetch("/parts",{method:"POST",body:{
+        catalog_no:part.catalog_no,
+        name:part.name,
+        buy_price:part.price_buy||0,
+        sell_price:part.price_sell||0,
+        vat:23,
+        stock:0,
+        min_stock:2,
+        category:part.category||"AutoPartner",
+        supplier:"AutoPartner",
+        unit:"szt",
+      }});
+      setParts(p=>[...p,d]);
+      alert("Dodano do magazynu: "+part.name);
+    } catch(err){alert("Blad: "+err.message);}
   };
 
   return (
     <div>
-      <SH title="Magazyn części" count={parts.length} action={()=>setModal({type:"new_part"})} actionLabel="Dodaj część" sub="Stan magazynowy i ceny"/>
+      <SH title="Magazyn czesci" count={parts.length} action={()=>setModal({type:"new_part"})} actionLabel="Dodaj czesc" sub="Stan magazynowy, ceny i integracja z hurtowniami"/>
       <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:12,marginBottom:16}}>
         <Stat label="Pozycji" value={parts.length} color={T.brand} icon="📋"/>
         <Stat label="Niski stan" value={parts.filter(p=>p.stock<=p.min_stock).length} color={T.red} icon="⚠️"/>
-        <Stat label="Wartość zakup" value={`${fmt(parts.reduce((s,p)=>s+(+p.buy_price)*(+p.stock),0))} zł`} color={T.textMut} icon="💳"/>
-        <Stat label="Wartość sprzed." value={`${fmt(parts.reduce((s,p)=>s+(+p.sell_price)*(+p.stock),0))} zł`} color={T.green} icon="💰"/>
+        <Stat label="Wartosc zakup" value={fmt(parts.reduce((s,p)=>s+(+p.buy_price)*(+p.stock),0))+" zl"} color={T.textMut} icon="💳"/>
+        <Stat label="Wartosc sprzed." value={fmt(parts.reduce((s,p)=>s+(+p.sell_price)*(+p.stock),0))+" zl"} color={T.green} icon="💰"/>
       </div>
-      <div style={{marginBottom:14}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Szukaj…" style={{...fldSt}}/></div>
-      <Card>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
-            <thead>
-              <tr style={{borderBottom:`2px solid ${T.border}`,background:"#f9fafb"}}>
-                {["Nr kat.","Nazwa","Kat.","Stan","Min","C. zakupu","C. sprzedaży","VAT","Dostawca",""].map(h=>(
-                  <th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:11,color:T.textMut,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(p=>(
-                <tr key={p.id} style={{borderBottom:`1px solid ${T.border}`}}>
-                  <td style={{padding:"10px",fontSize:12,color:T.textMut,fontFamily:"monospace"}}>{p.catalog_no}</td>
-                  <td style={{padding:"10px",fontWeight:600,fontSize:14}}>{p.name}</td>
-                  <td style={{padding:"10px"}}><Badge color={T.brand} bg={T.brandLt}>{p.category}</Badge></td>
-                  <td style={{padding:"10px",fontWeight:800,color:p.stock<=p.min_stock?T.red:T.green}}>{p.stock} {p.unit}</td>
-                  <td style={{padding:"10px",color:T.textMut}}>{p.min_stock}</td>
-                  <td style={{padding:"10px",fontSize:13}}>{fmt(p.buy_price)} zł</td>
-                  <td style={{padding:"10px",fontWeight:700}}>{fmt(p.sell_price)} zł</td>
-                  <td style={{padding:"10px"}}>{p.vat}%</td>
-                  <td style={{padding:"10px",fontSize:12,color:T.textSoft}}>{p.supplier}</td>
-                  <td style={{padding:"10px"}}><button onClick={()=>deletePart(p.id,p.name)} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:16}}>🗑️</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+
+      {/* Tabs */}
+      <div style={{display:"flex",gap:6,marginBottom:14}}>
+        {[{id:"magazyn",l:"Moj magazyn"},{id:"autopartner",l:"AutoPartner"},{id:"intercars",l:"Inter Cars"}].map(t=>(
+          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid "+(activeTab===t.id?T.brand:T.border),background:activeTab===t.id?T.brandLt:T.white,color:activeTab===t.id?T.brand:T.textMut,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      {/* MOJ MAGAZYN */}
+      {activeTab==="magazyn"&&(
+        <>
+          <div style={{marginBottom:14}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Szukaj po nazwie lub nr kat..." style={{...fldSt}}/></div>
+          <Card>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}>
+                <thead>
+                  <tr style={{borderBottom:"2px solid "+T.border,background:"#f9fafb"}}>
+                    {["Nr kat.","Nazwa","Kat.","Stan","Min","C. zakupu","C. sprzedazy","VAT","Dostawca",""].map(h=>(
+                      <th key={h} style={{padding:"8px 10px",textAlign:"left",fontSize:11,color:T.textMut,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(p=>(
+                    <tr key={p.id} style={{borderBottom:"1px solid "+T.border}}>
+                      <td style={{padding:"10px",fontSize:12,color:T.textMut,fontFamily:"monospace"}}>{p.catalog_no}</td>
+                      <td style={{padding:"10px",fontWeight:600,fontSize:14}}>{p.name}</td>
+                      <td style={{padding:"10px"}}><Badge color={T.brand} bg={T.brandLt}>{p.category}</Badge></td>
+                      <td style={{padding:"10px",fontWeight:800,color:+p.stock<=(+p.min_stock)?T.red:T.green}}>{p.stock} {p.unit}</td>
+                      <td style={{padding:"10px",color:T.textMut}}>{p.min_stock}</td>
+                      <td style={{padding:"10px",fontSize:13}}>{fmt(p.buy_price)} zl</td>
+                      <td style={{padding:"10px",fontWeight:700}}>{fmt(p.sell_price)} zl</td>
+                      <td style={{padding:"10px"}}>{p.vat}%</td>
+                      <td style={{padding:"10px",fontSize:12}}>{p.supplier}</td>
+                      <td style={{padding:"10px"}}><button onClick={()=>deletePart(p.id,p.name)} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:16}}>🗑️</button></td>
+                    </tr>
+                  ))}
+                  {filtered.length===0&&<tr><td colSpan={10} style={{padding:30,textAlign:"center",color:T.textXs}}>Brak czesci w magazynie</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {/* AUTOPARTNER */}
+      {activeTab==="autopartner"&&(
+        <Card>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>AutoPartner B2B</div>
+          <div style={{fontSize:13,color:T.textMut,marginBottom:14}}>Wyszukaj czesc w hurtowni AutoPartner i dodaj do swojego magazynu</div>
+          <div style={{display:"flex",gap:0,marginBottom:12}}>
+            <input value={apSearch} onChange={e=>setApSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&searchAutoPartner()}
+              placeholder="Wpisz nazwe lub nr katalogowy czesci..." style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1}}/>
+            <button onClick={searchAutoPartner} disabled={apLoading||!apSearch}
+              style={{padding:"0 20px",background:T.brand,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:14,cursor:"pointer",opacity:!apSearch?.5:1}}>
+              {apLoading?"...":"Szukaj"}
+            </button>
+          </div>
+          {apMsg&&<div style={{padding:"8px 12px",background:apMsg.ok?T.greenLt:T.yellowLt,borderRadius:8,fontSize:13,color:apMsg.ok?T.green:T.yellow,fontWeight:600,marginBottom:12}}>{apMsg.txt}</div>}
+          {apResults.length===0&&!apLoading&&(
+            <div style={{background:T.bg,borderRadius:10,padding:16,fontSize:13,color:T.textMut}}>
+              <div style={{fontWeight:700,marginBottom:8}}>Aby korzystac z AutoPartner API:</div>
+              <div>1. Skontaktuj sie z opiekunem handlowym AutoPartner</div>
+              <div>2. Popros o dostep do API B2B (login i haslo API)</div>
+              <div>3. Dodaj do pliku .env na serwerze:</div>
+              <code style={{display:"block",background:"#1e293b",color:"#e2e8f0",padding:"10px 14px",borderRadius:8,marginTop:8,fontSize:12}}>
+                AP_URL=https://api.autopartner.pl<br/>
+                AP_LOGIN=twoj_login<br/>
+                AP_PASSWORD=twoje_haslo
+              </code>
+            </div>
+          )}
+          {apResults.map((p,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid "+T.border,gap:12}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,fontSize:14}}>{p.name}</div>
+                <div style={{fontSize:12,color:T.textMut,fontFamily:"monospace"}}>Nr kat: {p.catalog_no} · {p.category}</div>
+                <div style={{fontSize:13,marginTop:2}}>
+                  <span style={{color:T.textMut}}>Zakup: </span><strong>{fmt(p.price_buy)} zl</strong>
+                  <span style={{color:T.textMut,marginLeft:12}}>Sprzedaz: </span><strong style={{color:T.green}}>{fmt(p.price_sell)} zl</strong>
+                  <span style={{color:T.textMut,marginLeft:12}}>Stan: </span><strong style={{color:p.stock>0?T.green:T.red}}>{p.stock} szt</strong>
+                </div>
+              </div>
+              <Btn sm onClick={()=>importPart(p)} color={T.green}>+ Do magazynu</Btn>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* INTER CARS */}
+      {activeTab==="intercars"&&(
+        <Card>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:4}}>Inter Cars B2B</div>
+          <div style={{fontSize:13,color:T.textMut,marginBottom:14}}>Wyszukaj czesc w hurtowni Inter Cars</div>
+          <div style={{background:T.bg,borderRadius:10,padding:16,fontSize:13,color:T.textMut}}>
+            <div style={{fontWeight:700,marginBottom:8}}>Aby korzystac z Inter Cars API:</div>
+            <div>1. Zadzwon do opiekuna Inter Cars i popros o dostep do API B2B</div>
+            <div>2. Otrzymasz login, haslo i URL do API</div>
+            <div>3. Dodaj do pliku .env na serwerze:</div>
+            <code style={{display:"block",background:"#1e293b",color:"#e2e8f0",padding:"10px 14px",borderRadius:8,marginTop:8,fontSize:12}}>
+              IC_URL=https://api.intercars.pl<br/>
+              IC_LOGIN=twoj_login<br/>
+              IC_PASSWORD=twoje_haslo
+            </code>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
