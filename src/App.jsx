@@ -1064,24 +1064,59 @@ function UsersScreen({currentUser}) {
 }
 
 function Settings({user,onLogout}) {
+  const [firm,setFirm]=useState({name:"",nip:"",address:"",city:"",phone:"",email:"",bank:"",ksef_nip:"",ksef_token:""});
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [saved,setSaved]=useState(false);
+  const setF=k=>v=>setFirm(p=>({...p,[k]:v}));
+
+  useEffect(()=>{
+    apiFetch("/settings").then(d=>{ if(d) setFirm(d); }).catch(()=>{}).finally(()=>setLoading(false));
+  },[]);
+
+  const save=async()=>{
+    setSaving(true);
+    try {
+      await apiFetch("/settings",{method:"POST",body:firm});
+      setSaved(true);
+      setTimeout(()=>setSaved(false),3000);
+    } catch(err){ alert("Blad zapisywania: "+err.message); }
+    setSaving(false);
+  };
+
+  if(loading) return <div style={{textAlign:"center",padding:40,color:T.textMut}}>Ladowanie ustawien...</div>;
+
   return (
     <div>
-      <SH title="Ustawienia" sub="Dane firmy i konfiguracja systemu"/>
-      <Card style={{maxWidth:600,marginBottom:16}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>Dane firmy</div>
+      <SH title="Ustawienia" sub="Dane firmy widoczne na fakturach i dokumentach"/>
+      <Card style={{maxWidth:640,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:16}}>Dane firmy (naglowek faktur i paragonow)</div>
         <div style={{display:"grid",gap:12}}>
-          <Field label="Nazwa firmy" value="Auto Serwis Mod4Cars" onChange={()=>{}}/>
-          <Field label="NIP" value="1234598760" onChange={()=>{}}/>
-          <Field label="Adres" value="ul. Warsztatowa 1, 00-001 Warszawa" onChange={()=>{}}/>
-          <Field label="E-mail" value="biuro@mod4cars.eu" onChange={()=>{}}/>
-          <Field label="Konto bankowe" value="PL61 1090 1014 0000 0712 1981 2874" onChange={()=>{}}/>
+          <Field label="Nazwa firmy *" value={firm.name} onChange={setF("name")} placeholder="np. Auto Serwis XYZ Sp. z o.o." required/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <Field label="NIP *" value={firm.nip} onChange={setF("nip")} placeholder="0000000000" required/>
+            <Field label="Telefon" value={firm.phone} onChange={setF("phone")} placeholder="+48 22 123 45 67"/>
+          </div>
+          <Field label="Adres (ulica i numer)" value={firm.address} onChange={setF("address")} placeholder="ul. Warsztatowa 1"/>
+          <Field label="Kod pocztowy i miasto" value={firm.city} onChange={setF("city")} placeholder="00-001 Warszawa"/>
+          <Field label="E-mail" value={firm.email} onChange={setF("email")} type="email" placeholder="biuro@twojfirma.pl"/>
+          <Field label="Numer konta bankowego (IBAN)" value={firm.bank} onChange={setF("bank")} placeholder="PL61 1090 1014 0000 0712 1981 2874"/>
         </div>
-        <div style={{marginTop:14}}><Btn>Zapisz ustawienia</Btn></div>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:12,marginTop:20}}>Konfiguracja KSeF (opcjonalna)</div>
+        <div style={{display:"grid",gap:12}}>
+          <Field label="NIP do KSeF" value={firm.ksef_nip} onChange={setF("ksef_nip")} placeholder="NIP firmy w KSeF"/>
+          <Field label="Token autoryzacyjny KSeF" value={firm.ksef_token} onChange={setF("ksef_token")} placeholder="Token z portalu podatki.gov.pl" type="password"/>
+        </div>
+        <div style={{marginTop:16,display:"flex",gap:10,alignItems:"center"}}>
+          <Btn onClick={save} loading={saving}>Zapisz ustawienia</Btn>
+          {saved&&<Badge color={T.green} bg={T.greenLt} dot>Zapisano pomyslnie</Badge>}
+        </div>
       </Card>
-      <Card style={{maxWidth:600}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>Sesja</div>
-        <div style={{fontSize:13,color:T.textMut,marginBottom:14}}>Zalogowany jako: <strong>{user.name}</strong> ({ROLE_CFG[user.role]?.label})</div>
-        <Btn outline color={T.red} danger onClick={onLogout} icon="🚪">Wyloguj się</Btn>
+      <Card style={{maxWidth:640,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>Twoje konto</div>
+        <div style={{fontSize:13,color:T.textMut,marginBottom:4}}>Zalogowany jako: <strong>{user.name}</strong></div>
+        <div style={{fontSize:13,color:T.textMut,marginBottom:14}}>Rola: <Badge color={(ROLE_CFG[user.role]||{}).color||T.brand} bg={(ROLE_CFG[user.role]||{}).bg||T.brandLt}>{(ROLE_CFG[user.role]||{}).icon} {(ROLE_CFG[user.role]||{}).label}</Badge></div>
+        <Btn outline color={T.red} danger onClick={onLogout} icon="🚪">Wyloguj sie</Btn>
       </Card>
     </div>
   );
@@ -1253,6 +1288,66 @@ export default function App() {
 
 // ── MODAL COMPONENTS ──────────────────────────────────────────────────────────
 
+// ── INLINE VEHICLE FORM (w formularzu zlecenia) ──────────────────────────────
+function InlineVehicleForm({clientId,onSave}) {
+  const [f,setF]=useState({make:"",model:"",year:new Date().getFullYear(),plate:"",vin:"",fuel_type:"Benzyna",engine:"",color:"",mileage:0});
+  const [vinLoading,setVinLoading]=useState(false);
+  const [msg,setMsg]=useState(null);
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  const fetchVIN=async()=>{
+    const vin=f.vin.trim().toUpperCase();
+    if(vin.length!==17){setMsg({ok:false,txt:"VIN musi miec 17 znakow"});return;}
+    setVinLoading(true);setMsg(null);
+    try {
+      const data=await apiFetch("/vin/"+vin);
+      if(data.ok&&data.make){
+        setF(p=>({...p,
+          make:data.make||p.make,
+          model:data.model||p.model,
+          year:data.year||p.year,
+          engine:data.engine||p.engine,
+          fuel_type:data.fuel_type||p.fuel_type,
+        }));
+        setMsg({ok:true,txt:"Dane z NHTSA: "+data.make+" "+data.model+" "+data.year});
+      } else {
+        setMsg({ok:false,txt:data.error||"Nie znaleziono pojazdu dla tego VIN"});
+      }
+    } catch(err){setMsg({ok:false,txt:"Blad pobierania VIN: "+err.message});}
+    setVinLoading(false);
+  };
+
+  return (
+    <div style={{background:T.brandLt,border:"1.5px solid "+T.brand+"44",borderRadius:10,padding:14,marginTop:8}}>
+      <div style={{fontWeight:700,fontSize:13,color:T.brand,marginBottom:10}}>Nowy pojazd dla tego klienta</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div style={{gridColumn:"1 / -1"}}>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,textTransform:"uppercase",letterSpacing:".06em",marginBottom:4}}>VIN (opcjonalny – auto-uzupelni dane)</div>
+          <div style={{display:"flex"}}>
+            <input value={f.vin} onChange={e=>set("vin")(e.target.value.toUpperCase())} placeholder="17-znakowy VIN" maxLength={17}
+              style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1,fontFamily:"monospace",fontSize:13}}/>
+            <button onClick={fetchVIN} disabled={vinLoading||f.vin.length!==17}
+              style={{padding:"0 12px",background:T.green,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:11,cursor:"pointer",opacity:f.vin.length!==17?.4:1}}>
+              {vinLoading?"...":"Dekoduj"}
+            </button>
+          </div>
+          {msg&&<div style={{marginTop:4,fontSize:12,color:msg.ok?T.green:T.red,fontWeight:600}}>{msg.txt}</div>}
+        </div>
+        <Field label="Tablica *" value={f.plate} onChange={v=>set("plate")(v.toUpperCase())} placeholder="WA12345"/>
+        <Field label="Marka *" value={f.make} onChange={set("make")} placeholder="np. Volkswagen"/>
+        <Field label="Model *" value={f.model} onChange={set("model")} placeholder="np. Golf"/>
+        <Field label="Rok" value={f.year} onChange={set("year")} type="number"/>
+        <Field label="Paliwo" value={f.fuel_type} onChange={set("fuel_type")} options={["Benzyna","Diesel","Hybryda","Elektryczny","LPG"]}/>
+        <Field label="Silnik" value={f.engine} onChange={set("engine")} placeholder="np. 2.0 TDI 150KM"/>
+        <Field label="Przebieg (km)" value={f.mileage} onChange={set("mileage")} type="number"/>
+      </div>
+      <div style={{marginTop:10,display:"flex",gap:8}}>
+        <Btn sm onClick={()=>onSave(f)} disabled={!f.make||!f.model||!f.plate} color={T.green}>Dodaj i wybierz pojazd</Btn>
+      </div>
+    </div>
+  );
+}
+
 function NewOrderModal({clients,vehicles,users,onClose,onSave}) {
   const [clientId,setClientId]=useState(clients[0]?.id||"");
   const [vehicleId,setVehicleId]=useState("");
@@ -1262,7 +1357,9 @@ function NewOrderModal({clients,vehicles,users,onClose,onSave}) {
   const [priority,setPriority]=useState("Normalny");
   const [deadline,setDeadline]=useState(today());
   const [items,setItems]=useState([{type:"labor",name:"",qty:1,unit_price:100,vat:23}]);
-  const cVehicles=vehicles.filter(v=>v.client_id===+clientId);
+  const [showAddVehicle,setShowAddVehicle]=useState(false);
+  const [newVehicles,setNewVehicles]=useState([]);
+  const cVehicles=[...vehicles.filter(v=>v.client_id===+clientId),...newVehicles.filter(v=>v.client_id===+clientId)];
   const mechanics=(users||[]).filter(u=>u.role==="mechanik"||u.role==="admin");
   const {net,vatAmt,gross}=calcTotals(items);
   const setItem=(i,k,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[k]:v}:x));
@@ -1270,7 +1367,28 @@ function NewOrderModal({clients,vehicles,users,onClose,onSave}) {
     <Modal title="Nowe zlecenie serwisowe" onClose={onClose} wide>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
         <Field label="Klient *" value={clientId} onChange={v=>{setClientId(v);setVehicleId("");}} options={[{v:"",l:"— wybierz klienta —"},...clients.map(c=>({v:c.id,l:c.name}))]} required/>
-        <Field label="Pojazd" value={vehicleId} onChange={setVehicleId} options={[{v:"",l:"— wybierz pojazd —"},...cVehicles.map(v=>({v:v.id,l:v.make+" "+v.model+" ("+v.plate+")"}))]}/>
+        <div>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>Pojazd</div>
+          <div style={{display:"flex",gap:6}}>
+            <select value={vehicleId} onChange={e=>setVehicleId(e.target.value)} style={{...fldSt,flex:1}}>
+              <option value="">— wybierz pojazd —</option>
+              {cVehicles.map(v=><option key={v.id} value={v.id}>{v.make} {v.model} ({v.plate})</option>)}
+            </select>
+            {clientId&&<button onClick={()=>setShowAddVehicle(p=>!p)} style={{padding:"0 12px",background:showAddVehicle?T.brand:T.brandLt,color:showAddVehicle?"#fff":T.brand,border:"1.5px solid "+T.brand,borderRadius:9,fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+              {showAddVehicle?"Anuluj":"+ Nowy pojazd"}
+            </button>}
+          </div>
+          {showAddVehicle&&(
+            <InlineVehicleForm clientId={clientId} onSave={async(v)=>{
+              try {
+                const d=await apiFetch("/vehicles",{method:"POST",body:{...v,client_id:+clientId}});
+                setNewVehicles(p=>[...p,d]);
+                setVehicleId(d.id);
+                setShowAddVehicle(false);
+              } catch(err){alert("Blad dodawania pojazdu: "+err.message);}
+            }}/>
+          )}
+        </div>
         <Field label="Mechanik" value={mechanicId} onChange={setMechanicId} options={[{v:"",l:"— wybierz mechanika —"},...mechanics.map(u=>({v:u.id,l:u.name}))]}/>
         <Field label="Priorytet" value={priority} onChange={setPriority} options={["Pilny","Normalny","Niski"]}/>
         <Field label="Termin realizacji" value={deadline} onChange={setDeadline} type="date"/>
@@ -1322,32 +1440,17 @@ function NewClientModal({onClose,onSave}) {
     if(nip.length!==10){setGusMsg({ok:false,txt:"Wpisz poprawny NIP (10 cyfr)"});return;}
     setGusLoading(true);setGusMsg(null);
     try {
-      // Proba pobrania z publicznego API GUS przez CORS proxy
-      const res=await fetch("https://api.ares.ms/ares/getData?nip="+nip);
-      if(res.ok){
-        const data=await res.json();
-        if(data&&data.nazwa){
-          setF(p=>({...p,
-            name:data.nazwa||p.name,
-            address:(data.ulica||"")+" "+(data.nrNieruchomosci||""),
-            city:(data.kodPocztowy||"")+" "+(data.miejscowosc||""),
-            regon:data.regon||p.regon,
-          }));
-          setGusMsg({ok:true,txt:"Dane pobrane z GUS dla NIP: "+nip});
-          setGusLoading(false);
-          return;
-        }
+      const data=await apiFetch("/gus/"+nip);
+      if(data.ok){
+        setF(p=>({...p,name:data.name||p.name,address:data.address||p.address,city:data.city||p.city,regon:data.regon||p.regon}));
+        const src=data.source==="CEIDG"?"CEIDG (Ministerstwo Rozwoju)":"GUS";
+        setGusMsg({ok:true,txt:"Dane pobrane z "+src+" dla NIP: "+nip+(data.info?" – "+data.info:"")});
+      } else {
+        setGusMsg({ok:false,txt:data.error||"Nie znaleziono firmy"});
       }
-    } catch{}
-    // Fallback – wbudowane przykladowe dane
-    const mock={
-      "1234567890":{name:"Jan Kowalski Serwis",address:"ul. Lipowa 5",city:"00-001 Warszawa",regon:"123456789"},
-      "9876543210":{name:"AUTO SERWIS Nowak Sp. z o.o.",address:"ul. Motorowa 12",city:"30-001 Krakow",regon:"987654321"},
-      "5556667770":{name:"Budowlanka Sp. z o.o.",address:"ul. Ceglana 3",city:"80-001 Gdansk",regon:"555666777"},
-    };
-    const data=mock[nip]||{name:"Firma "+nip.slice(-4)+" Sp. z o.o.",address:"ul. Przykladowa 1",city:"00-001 Warszawa",regon:nip.slice(0,9)};
-    setF(p=>({...p,name:data.name,address:data.address,city:data.city,regon:data.regon}));
-    setGusMsg({ok:true,txt:"Dane uzupelnione dla NIP: "+nip+" (pobierz klucz API GUS dla pelnych danych)"});
+    } catch(err){
+      setGusMsg({ok:false,txt:"Blad: "+err.message});
+    }
     setGusLoading(false);
   };
 
@@ -1396,24 +1499,15 @@ function NewCarModal({clients,onClose,onSave}) {
     if(vin.length!==17){setVinMsg({ok:false,txt:"VIN musi miec dokladnie 17 znakow"});return;}
     setVinLoading(true);setVinMsg(null);
     try {
-      // Publiczne API VIN decoder (bezplatne)
-      const res=await fetch("https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/"+vin+"?format=json");
-      const data=await res.json();
-      const r=data.Results?.[0];
-      if(r&&r.Make){
-        setF(p=>({...p,
-          make:r.Make||p.make,
-          model:r.Model||p.model,
-          year:+r.ModelYear||p.year,
-          engine:r.DisplacementL?(r.DisplacementL+" L "+r.EngineCylinders+" cyl"):"",
-          fuel_type:r.FuelTypePrimary==="Gasoline"?"Benzyna":r.FuelTypePrimary==="Diesel"?"Diesel":r.FuelTypePrimary||p.fuel_type,
-        }));
-        setVinMsg({ok:true,txt:"Dane pobrane z bazy NHTSA dla VIN: "+vin});
+      const data=await apiFetch("/vin/"+vin);
+      if(data.ok){
+        setF(p=>({...p,make:data.make||p.make,model:data.model||p.model,year:data.year||p.year,engine:data.engine||p.engine,fuel_type:data.fuel_type||p.fuel_type}));
+        setVinMsg({ok:true,txt:"Dane z NHTSA (baza USA): "+data.make+" "+data.model+" "+data.year+(data.body_type?" · "+data.body_type:"")});
       } else {
-        setVinMsg({ok:false,txt:"Nie znaleziono pojazdu dla tego VIN"});
+        setVinMsg({ok:false,txt:data.error||"Nie znaleziono VIN"});
       }
     } catch(err){
-      setVinMsg({ok:false,txt:"Blad pobierania danych VIN: "+err.message});
+      setVinMsg({ok:false,txt:"Blad: "+err.message});
     }
     setVinLoading(false);
   };
@@ -1423,21 +1517,20 @@ function NewCarModal({clients,onClose,onSave}) {
     const plate=f.plate.trim().toUpperCase();
     if(!plate){setVinMsg({ok:false,txt:"Wpisz numer rejestracyjny"});return;}
     setPlateLoading(true);setVinMsg(null);
-    await new Promise(r=>setTimeout(r,1000));
-    const mock={
-      "WA12345":{make:"Volkswagen",model:"Golf VII",year:2018,vin:"WVWZZZ1KZ9W123456",fuel_type:"Diesel",engine:"1968 cm3 150 KM",color:"Czarny metalik"},
-      "KR99001":{make:"BMW",model:"320i",year:2020,vin:"WBA8E9C51HK123456",fuel_type:"Benzyna",engine:"1998 cm3 184 KM",color:"Bialy alpejski"},
-      "WA55500":{make:"Toyota",model:"Corolla",year:2021,vin:"SB1ZE3JE60E654321",fuel_type:"Hybryda",engine:"1798 cm3 122 KM",color:"Szary"},
-    };
-    const data=mock[plate];
-    if(data){
-      setF(p=>({...p,...data,plate}));
-      setVinMsg({ok:true,txt:"Dane pobrane z CEPiK dla tablicy: "+plate});
-    } else {
-      const makes=["Ford","Opel","Renault","Skoda","Hyundai"];
-      const m=makes[plate.charCodeAt(0)%5];
-      setF(p=>({...p,make:m,model:"Model "+plate.slice(-3),year:2018+(plate.charCodeAt(1)%6),plate}));
-      setVinMsg({ok:true,txt:"Dane pobrane z CEPiK dla tablicy: "+plate+" (przykladowe)"});
+    try {
+      const data=await apiFetch("/cepik/"+plate);
+      if(data.ok){
+        setF(p=>({...p,make:data.make||p.make,model:data.model||p.model,year:data.year||p.year,vin:data.vin||p.vin,fuel_type:data.fuel_type||p.fuel_type,engine:data.engine||p.engine,color:data.color||p.color,plate}));
+        if(data.info){
+          setVinMsg({ok:false,txt:"CEPiK: "+data.info});
+        } else {
+          setVinMsg({ok:true,txt:"Dane z CEPiK dla tablicy: "+plate+" · "+data.make+" "+data.model+" "+data.year});
+        }
+      } else {
+        setVinMsg({ok:false,txt:data.error||"Nie znaleziono pojazdu"});
+      }
+    } catch(err){
+      setVinMsg({ok:false,txt:"Blad: "+err.message});
     }
     setPlateLoading(false);
   };
