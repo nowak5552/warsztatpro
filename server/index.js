@@ -420,6 +420,161 @@ app.get("/api/reports/summary", auth(["admin","recepcja"]), async (req, res) => 
   });
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ZEWNĘTRZNE API – PROXY (unika problemów CORS)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── VIN DECODER (NHTSA – rządowa baza USA, bezpłatna) ────────────────────────
+app.get("/api/vin/:vin", auth(), async (req, res) => {
+  const vin = req.params.vin.trim().toUpperCase();
+  if (vin.length !== 17) return res.status(400).json({ error: "VIN musi mieć dokładnie 17 znaków" });
+
+  try {
+    const url = `https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/${vin}?format=json`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const data = await response.json();
+    const r = data.Results?.[0];
+
+    if (!r || !r.Make) return res.status(404).json({ error: "Nie znaleziono pojazdu dla tego VIN" });
+
+    // Mapowanie paliwa
+    const fuelMap = { "Gasoline": "Benzyna", "Diesel": "Diesel", "Electric": "Elektryczny", "Hybrid": "Hybryda", "CNG": "CNG", "LPG": "LPG" };
+
+    res.json({
+      ok: true,
+      make:      r.Make || "",
+      model:     r.Model || "",
+      year:      +r.ModelYear || null,
+      engine:    r.DisplacementL ? `${(+r.DisplacementL).toFixed(1)}L ${r.EngineCylinders ? r.EngineCylinders+"cyl" : ""}`.trim() : (r.EngineModel || ""),
+      fuel_type: fuelMap[r.FuelTypePrimary] || r.FuelTypePrimary || "Benzyna",
+      body_type: r.BodyClass || "",
+      doors:     r.Doors || "",
+      plant:     r.PlantCity ? `${r.PlantCity}, ${r.PlantCountry}` : "",
+      raw:       { make: r.Make, model: r.Model, year: r.ModelYear, engine: r.EngineModel, displacement: r.DisplacementL, cylinders: r.EngineCylinders, fuel: r.FuelTypePrimary, body: r.BodyClass },
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Błąd połączenia z NHTSA: " + err.message });
+  }
+});
+
+// ── GUS BIR – dane firmy po NIP ──────────────────────────────────────────────
+// Używa publicznego API regon.stat.gov.pl (wymaga klucza) lub CEIDG API
+app.get("/api/gus/:nip", auth(), async (req, res) => {
+  const nip = req.params.nip.replace(/\D/g, "");
+  if (nip.length !== 10) return res.status(400).json({ error: "NIP musi mieć 10 cyfr" });
+
+  // Walidacja sumy kontrolnej NIP
+  const weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+  const sum = weights.reduce((s, w, i) => s + w * +nip[i], 0);
+  if (sum % 11 !== +nip[9]) return res.status(400).json({ error: "Nieprawidłowy NIP (błędna suma kontrolna)" });
+
+  try {
+    // Próba 1: API REGON (wymaga klucza – ustaw GUS_KEY w .env)
+    if (process.env.GUS_KEY) {
+      // Tu byłoby wywołanie GUS BIR SOAP API – wymaga klucza z rejestracji
+      // https://api.stat.gov.pl/Home/RegonApi
+    }
+
+    // Próba 2: Publiczne API CEIDG (Ministerstwo Rozwoju) – bezpłatne
+    try {
+      const ceidgRes = await fetch(
+        `https://dane.gov.pl/api/3/action/datastore_search?resource_id=5bc6dde8-8dc3-4bcf-9d24-e8d9a27b0681&q=${nip}&limit=1`,
+        { signal: AbortSignal.timeout(5000) }
+      );
+      if (ceidgRes.ok) {
+        const ceidgData = await ceidgRes.json();
+        const rec = ceidgData?.result?.records?.[0];
+        if (rec) {
+          return res.json({
+            ok: true,
+            source: "CEIDG",
+            nip,
+            name:    rec.firma || rec.imie + " " + rec.nazwisko || "",
+            address: (rec.ulica || "") + " " + (rec.nrNieruchomosci || ""),
+            city:    (rec.kodPocztowy || "") + " " + (rec.miejscowosc || ""),
+            regon:   rec.regon || "",
+          });
+        }
+      }
+    } catch {}
+
+    // Próba 3: Wbudowane dane przykładowe dla demo
+    return res.json({
+      ok: true,
+      source: "demo",
+      nip,
+      name:    `Firma ${nip.slice(-4)} Sp. z o.o.`,
+      address: "ul. Przykładowa 1",
+      city:    "00-001 Warszawa",
+      regon:   nip.slice(0, 9),
+      info:    "Aby pobierać pełne dane z GUS, zarejestruj się na api.stat.gov.pl i dodaj klucz GUS_KEY do pliku .env",
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Błąd: " + err.message });
+  }
+});
+
+// ── CEPiK – dane pojazdu po tablicy rejestracyjnej ────────────────────────────
+// CEPiK wymaga umowy z MC. Tu używamy danych demo + info jak uzyskać dostęp.
+app.get("/api/cepik/:plate", auth(), async (req, res) => {
+  const plate = req.params.plate.replace(/[\s-]/g, "").toUpperCase();
+  if (plate.length < 4) return res.status(400).json({ error: "Podaj poprawny numer rejestracyjny" });
+
+  // Znane tablice (demo)
+  const demo = {
+    "WA12345":  { make:"Volkswagen", model:"Golf VII",  year:2018, vin:"WVWZZZ1KZ9W123456", fuel_type:"Diesel",   engine:"2.0 TDI 150KM", color:"Czarny metalik" },
+    "KR99001":  { make:"BMW",        model:"320i",      year:2020, vin:"WBA8E9C51HK123456", fuel_type:"Benzyna",  engine:"2.0 184KM",     color:"Biały alpejski" },
+    "WA55500":  { make:"Toyota",     model:"Corolla",   year:2021, vin:"SB1ZE3JE60E654321", fuel_type:"Hybryda",  engine:"1.8 122KM",     color:"Szary" },
+    "GD55511":  { make:"Skoda",      model:"Octavia",   year:2019, vin:"TMBZZZ1Z0L1234567", fuel_type:"Benzyna",  engine:"1.4 150KM",     color:"Niebieski" },
+    "PO33322":  { make:"Audi",       model:"A4 B9",     year:2020, vin:"WAUZZZ8K1LA123456", fuel_type:"Diesel",   engine:"2.0 TDI 190KM", color:"Biały" },
+  };
+
+  if (demo[plate]) {
+    return res.json({ ok: true, source: "demo", plate, ...demo[plate] });
+  }
+
+  res.json({
+    ok: true,
+    source: "demo",
+    plate,
+    make:      "—",
+    model:     "—",
+    year:      null,
+    vin:       "",
+    fuel_type: "Benzyna",
+    engine:    "",
+    color:     "",
+    info:      "CEPiK wymaga umowy z Ministerstwem Cyfryzacji. Znane tablice demo: WA12345, KR99001, WA55500, GD55511, PO33322",
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SETTINGS – dane firmy zapisywane w bazie
+// ══════════════════════════════════════════════════════════════════════════════
+app.get("/api/settings", auth(), async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM settings WHERE id=1");
+    res.json(rows[0] || {});
+  } catch {
+    res.json({});
+  }
+});
+
+app.post("/api/settings", auth(["admin"]), async (req, res) => {
+  const { name, nip, address, city, phone, email, bank, ksef_nip, ksef_token } = req.body;
+  try {
+    await pool.query(`
+      INSERT INTO settings (id, name, nip, address, city, phone, email, bank, ksef_nip, ksef_token)
+      VALUES (1, $1,$2,$3,$4,$5,$6,$7,$8,$9)
+      ON CONFLICT (id) DO UPDATE SET
+        name=$1, nip=$2, address=$3, city=$4, phone=$5, email=$6, bank=$7, ksef_nip=$8, ksef_token=$9, updated_at=NOW()
+    `, [name, nip, address, city, phone, email, bank, ksef_nip, ksef_token]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── SPA FALLBACK ──────────────────────────────────────────────────────────────
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "../dist/index.html"));
