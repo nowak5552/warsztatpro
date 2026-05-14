@@ -7,15 +7,39 @@ import { useState, useEffect, useCallback } from "react";
 ═══════════════════════════════════════════════════════════════════════════ */
 
 const API = "/api";
-const T = {
-  bg:"#f4f6f9",white:"#ffffff",card:"#ffffff",border:"#e4e9f0",
-  brand:"#1a56db",brandDk:"#1344b5",brandLt:"#eff4ff",
-  green:"#16a34a",greenLt:"#f0fdf4",red:"#dc2626",redLt:"#fef2f2",
-  yellow:"#d97706",yellowLt:"#fffbeb",purple:"#7c3aed",purpleLt:"#f5f3ff",
-  cyan:"#0891b2",cyanLt:"#ecfeff",orange:"#ea580c",orangeLt:"#fff7ed",
-  text:"#111827",textSm:"#374151",textMut:"#6b7280",textXs:"#9ca3af",
-  sh1:"0 1px 3px rgba(0,0,0,.07)",sh2:"0 4px 16px rgba(0,0,0,.09)",sh3:"0 20px 60px rgba(0,0,0,.15)",
+// T is set dynamically based on theme (see LIGHT/DARK above)
+// ── DARK THEME ────────────────────────────────────────────────────────────────
+const DARK = {
+  bg:"#0f172a",white:"#1e293b",card:"#1e293b",border:"#334155",
+  brand:"#3b82f6",brandDk:"#2563eb",brandLt:"rgba(59,130,246,.15)",
+  green:"#22c55e",greenLt:"rgba(34,197,94,.12)",greenDk:"#16a34a",
+  red:"#f87171",redLt:"rgba(248,113,113,.12)",
+  yellow:"#fbbf24",yellowLt:"rgba(251,191,36,.12)",
+  purple:"#a78bfa",purpleLt:"rgba(167,139,250,.12)",
+  cyan:"#22d3ee",cyanLt:"rgba(34,211,238,.12)",
+  orange:"#fb923c",orangeLt:"rgba(251,146,60,.12)",
+  text:"#f1f5f9",textSm:"#cbd5e1",textMut:"#94a3b8",textXs:"#64748b",
+  sh1:"0 1px 3px rgba(0,0,0,.3)",sh2:"0 4px 6px rgba(0,0,0,.4)",sh3:"0 20px 60px rgba(0,0,0,.6)",
+  sidebar:"#020617",sidebarHover:"#0f172a",sidebarActive:"#1e40af",sidebarText:"#64748b",sidebarTextActive:"#f1f5f9",
 };
+const LIGHT = {
+  bg:"#f1f5f9",white:"#ffffff",card:"#ffffff",border:"#e2e8f0",
+  brand:"#2563eb",brandDk:"#1d4ed8",brandLt:"#eff6ff",
+  green:"#16a34a",greenLt:"#f0fdf4",greenDk:"#15803d",
+  red:"#dc2626",redLt:"#fef2f2",
+  yellow:"#d97706",yellowLt:"#fffbeb",
+  purple:"#7c3aed",purpleLt:"#f5f3ff",
+  cyan:"#0891b2",cyanLt:"#ecfeff",
+  orange:"#ea580c",orangeLt:"#fff7ed",
+  text:"#0f172a",textSm:"#334155",textMut:"#64748b",textXs:"#94a3b8",
+  sh1:"0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)",sh2:"0 4px 6px rgba(0,0,0,.07)",sh3:"0 20px 60px rgba(0,0,0,.15)",
+  sidebar:"#0f172a",sidebarHover:"#1e293b",sidebarActive:"#1e40af",sidebarText:"#94a3b8",sidebarTextActive:"#ffffff",
+};
+
+// Global theme state
+let _theme = localStorage.getItem("wp_theme")||"light";
+let T = _theme==="dark" ? {...DARK} : {...LIGHT};
+
 const fmt = n => new Intl.NumberFormat("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2}).format(+n||0);
 const fmtDate = d => d ? new Date(d).toLocaleDateString("pl-PL") : "—";
 const today = () => new Date().toISOString().slice(0,10);
@@ -27,9 +51,9 @@ const calcTotals = items => {
 };
 
 const ROLE_CFG = {
-  admin:    {label:"Administrator",color:T.brand,  bg:T.brandLt,  icon:"👑",modules:["dashboard","orders","docs","warehouse","clients","vehicles","calendar","reports","sms","ksef","users","settings"]},
+  admin:    {label:"Administrator",color:T.brand,  bg:T.brandLt,  icon:"👑",modules:["dashboard","orders","docs","warehouse","clients","vehicles","calendar","reports","sms","payments","ksef","users","settings"]},
   mechanik: {label:"Mechanik",     color:T.green,  bg:T.greenLt,  icon:"🔧",modules:["dashboard","orders","warehouse","vehicles","calendar"]},
-  recepcja: {label:"Recepcja",     color:T.purple, bg:T.purpleLt, icon:"📋",modules:["dashboard","orders","docs","clients","vehicles","calendar","reports"]},
+  recepcja: {label:"Recepcja",     color:T.purple, bg:T.purpleLt, icon:"📋",modules:["dashboard","orders","docs","clients","vehicles","calendar","reports","payments"]},
 };
 
 // ── API HELPER ────────────────────────────────────────────────────────────────
@@ -1185,6 +1209,78 @@ function Invoices({invoices,clients,setModal,isMobile}) {
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PAYMENTS
+// ══════════════════════════════════════════════════════════════════════════════
+function Payments({invoices,clients,isMobile}) {
+  const [selectedInv,setSelectedInv]=useState("");
+  const [payLink,setPayLink]=useState("");
+  const [generating,setGenerating]=useState(false);
+  const unpaid=invoices.filter(i=>!i.paid&&+i.gross>0);
+
+  const generateLink=async()=>{
+    if(!selectedInv)return;
+    setGenerating(true);
+    await new Promise(r=>setTimeout(r,800));
+    const inv=invoices.find(i=>i.id===+selectedInv);
+    if(inv){
+      const link="https://pay.mod4cars.eu/pay/"+inv.number.replace(/[/]/g,"-")+"?amount="+inv.gross;
+      setPayLink(link);
+    }
+    setGenerating(false);
+  };
+
+  return (
+    <div>
+      <SH title="Platnosci online" sub="Generuj linki do platnosci – Przelewy24, Stripe, PayU"/>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:20,marginBottom:20}}>
+        <Card>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>Generuj link do platnosci</div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <Field label="Wybierz fakture" value={selectedInv} onChange={setSelectedInv}
+              options={[{v:"",l:"— wybierz —"},...unpaid.map(i=>({v:i.id,l:i.number+" · "+fmt(i.gross)+" zl"}))]}/>
+            <Btn full onClick={generateLink} loading={generating} disabled={!selectedInv} icon="🔗">
+              Generuj link
+            </Btn>
+            {payLink&&(
+              <div style={{background:T.greenLt,border:"1px solid "+T.green+"30",borderRadius:10,padding:14}}>
+                <div style={{fontWeight:700,color:T.green,marginBottom:8}}>Link wygenerowany!</div>
+                <div style={{fontSize:11,fontFamily:"monospace",wordBreak:"break-all",background:T.white,padding:8,borderRadius:6,border:"1px solid "+T.border,marginBottom:10}}>{payLink}</div>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn sm outline color={T.brand} onClick={()=>navigator.clipboard.writeText(payLink).then(()=>alert("Skopiowano!"))}>Kopiuj</Btn>
+                  <Btn sm outline color={T.green} onClick={()=>window.open("mailto:?subject=Link+platnosc&body="+encodeURIComponent(payLink))}>E-mail</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+        <Card>
+          <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>Bramki platnosci</div>
+          {[
+            {name:"Przelewy24",desc:"BLIK, karty, przelewy – najpopularniejsza w PL",logo:"🏦",color:T.red,url:"https://www.przelewy24.pl"},
+            {name:"PayU",desc:"BLIK, raty, platnosci dla firm",logo:"💳",color:T.brand,url:"https://payu.pl"},
+            {name:"Stripe",desc:"Karty, Apple Pay, Google Pay",logo:"💰",color:T.purple,url:"https://stripe.com"},
+          ].map(p=>(
+            <div key={p.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid "+T.border}}>
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <div style={{fontSize:22}}>{p.logo}</div>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14}}>{p.name}</div>
+                  <div style={{fontSize:11,color:T.textMut}}>{p.desc}</div>
+                </div>
+              </div>
+              <Btn sm outline color={p.color} onClick={()=>window.open(p.url,"_blank")}>Rejestracja</Btn>
+            </div>
+          ))}
+          <div style={{marginTop:12,fontSize:12,color:T.textMut,background:T.bg,borderRadius:8,padding:10}}>
+            Po rejestracji skontaktuj sie z nami – podepniemy API i platnosci beda dzialac automatycznie.
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function KSeF({invoices,setInvoices,isMobile}) {
   const pending=invoices.filter(i=>i.ksef_status!=="wysłana");
   return (
@@ -1286,6 +1382,97 @@ function UsersScreen({currentUser}) {
         </div>
       )}
     </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PWA INSTALL BUTTON
+// ══════════════════════════════════════════════════════════════════════════════
+function PWAInstallButton() {
+  const [canInstall,setCanInstall]=useState(false);
+  const [installed,setInstalled]=useState(false);
+
+  useEffect(()=>{
+    // Check if already installed
+    if(window.matchMedia("(display-mode: standalone)").matches){
+      setInstalled(true);return;
+    }
+    // Check if install prompt is available
+    const checkPrompt=()=>{
+      if(window.pwaInstallPrompt) setCanInstall(true);
+    };
+    checkPrompt();
+    const interval=setInterval(checkPrompt,1000);
+    return ()=>clearInterval(interval);
+  },[]);
+
+  const install=async()=>{
+    if(!window.pwaInstallPrompt)return;
+    window.pwaInstallPrompt.prompt();
+    const result=await window.pwaInstallPrompt.userChoice;
+    if(result.outcome==="accepted"){
+      setInstalled(true);setCanInstall(false);
+      window.pwaInstallPrompt=null;
+    }
+  };
+
+  if(installed) return (
+    <div style={{fontSize:11,color:"#22c55e",fontWeight:600,textAlign:"center",padding:"4px 0"}}>
+      ✓ Zainstalowano na urządzeniu
+    </div>
+  );
+
+  if(!canInstall) return (
+    <div style={{fontSize:11,color:"#64748b",textAlign:"center",padding:"4px 0"}}>
+      📱 Dodaj do ekranu głównego
+    </div>
+  );
+
+  return (
+    <button onClick={install} style={{width:"100%",background:"rgba(37,99,235,.2)",border:"1px solid rgba(37,99,235,.4)",borderRadius:8,color:"#60a5fa",padding:"7px",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+      📲 Zainstaluj aplikację
+    </button>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// THEME TOGGLE COMPONENT
+// ══════════════════════════════════════════════════════════════════════════════
+function ThemeToggle() {
+  const [dark,setDark]=useState(localStorage.getItem("wp_theme")==="dark");
+
+  const toggle=()=>{
+    const newTheme=dark?"light":"dark";
+    localStorage.setItem("wp_theme",newTheme);
+    // Update global T object
+    const newT=newTheme==="dark"?{...DARK}:{...LIGHT};
+    Object.assign(T,newT);
+    setDark(!dark);
+    // Force re-render of whole app
+    window.location.reload();
+  };
+
+  return (
+    <button onClick={toggle} style={{
+      display:"flex",alignItems:"center",gap:3,
+      background:dark?"#1e293b":"#f1f5f9",
+      border:"2px solid "+(dark?"#334155":"#e2e8f0"),
+      borderRadius:30,padding:"4px 6px",cursor:"pointer",
+      transition:"all .2s",
+    }}>
+      <span style={{fontSize:16}}>{dark?"🌙":"☀️"}</span>
+      <div style={{
+        width:36,height:20,background:dark?"#3b82f6":"#d1d5db",
+        borderRadius:10,position:"relative",transition:"background .2s",
+      }}>
+        <div style={{
+          width:16,height:16,background:"#fff",borderRadius:"50%",
+          position:"absolute",top:2,left:dark?18:2,transition:"left .2s",
+          boxShadow:"0 1px 3px rgba(0,0,0,.2)",
+        }}/>
+      </div>
+      <span style={{fontSize:16}}>{dark?"☀️":"🌙"}</span>
+    </button>
   );
 }
 
@@ -1441,6 +1628,7 @@ export default function App() {
     {id:"calendar", icon:"📅",label:"Kalendarz"},
     {id:"reports",  icon:"📊",label:"Raporty"},
     {id:"sms",      icon:"📱",label:"SMS"},
+    {id:"payments",  icon:"💳",label:"Platnosci"},
     {id:"ksef",     icon:"🏛️",label:"KSeF"},
     {id:"users",    icon:"👥",label:"Użytkownicy"},
     {id:"settings", icon:"⚙️",label:"Ustawienia"},
@@ -1503,6 +1691,7 @@ export default function App() {
           {tab==="calendar"  &&<CalendarView events={calEvents} setEvents={setCalEvents} users={users} vehicles={vehicles} orders={orders} isMobile={isMobile}/>}
           {tab==="reports"   &&<Reports isMobile={isMobile}/>}
           {tab==="sms"       &&<SMSModule clients={clients} orders={orders} isMobile={isMobile}/>}
+          {tab==="payments"  &&<Payments invoices={invoices} clients={clients} isMobile={isMobile}/>}
           {tab==="ksef"      &&<KSeF invoices={invoices} setInvoices={setInvoices} isMobile={isMobile}/>}
           {tab==="users"     &&<UsersScreen currentUser={user}/>}
           {tab==="settings"  &&<Settings user={user} onLogout={handleLogout}/>}
