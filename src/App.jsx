@@ -1177,7 +1177,7 @@ function Settings({user,onLogout}) {
             <Field label="Klucz API terminala" value={firm.terminal_key||""} onChange={setF("terminal_key")} placeholder="Z umowy z eService" type="password"/>
           </div>
         </div>
-        <div style={{marginTop:12,display:"flex",gap:8"}}>
+        <div style={{marginTop:12,display:"flex",gap:8}}>
           <Btn sm outline color={T.cyan} onClick={()=>window.open("http://localhost:8765","_blank")}>Otworz dashboard agenta</Btn>
           <Btn sm outline color={T.green} onClick={()=>fetch("http://localhost:8765/api/status").then(r=>r.json()).then(d=>alert("Agent: "+(d.ok?"Online":"Offline"))).catch(()=>alert("Agent offline – uruchom start.bat na komputerze warsztatu"))}>Test polaczenia</Btn>
         </div>
