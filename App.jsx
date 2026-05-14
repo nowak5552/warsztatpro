@@ -27,9 +27,9 @@ const calcTotals = items => {
 };
 
 const ROLE_CFG = {
-  admin:    {label:"Administrator",color:T.brand,  bg:T.brandLt,  icon:"👑",modules:["dashboard","orders","docs","warehouse","clients","calendar","reports","ksef","users","settings"]},
-  mechanik: {label:"Mechanik",     color:T.green,  bg:T.greenLt,  icon:"🔧",modules:["dashboard","orders","warehouse","calendar"]},
-  recepcja: {label:"Recepcja",     color:T.purple, bg:T.purpleLt, icon:"📋",modules:["dashboard","orders","docs","clients","calendar","reports"]},
+  admin:    {label:"Administrator",color:T.brand,  bg:T.brandLt,  icon:"👑",modules:["dashboard","orders","docs","warehouse","clients","vehicles","calendar","reports","sms","ksef","users","settings"]},
+  mechanik: {label:"Mechanik",     color:T.green,  bg:T.greenLt,  icon:"🔧",modules:["dashboard","orders","warehouse","vehicles","calendar"]},
+  recepcja: {label:"Recepcja",     color:T.purple, bg:T.purpleLt, icon:"📋",modules:["dashboard","orders","docs","clients","vehicles","calendar","reports"]},
 };
 
 // ── API HELPER ────────────────────────────────────────────────────────────────
@@ -555,6 +555,117 @@ function VehicleHistory({vehicleId,vehicleName,onClose}) {
   );
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VEHICLES SCREEN
+// ══════════════════════════════════════════════════════════════════════════════
+function EditVehicleModal({vehicle,clients,onClose,onSave}) {
+  const [f,setF]=useState({...vehicle});
+  const [saving,setSaving]=useState(false);
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  const save=async()=>{
+    setSaving(true);
+    try {
+      await apiFetch("/vehicles/"+vehicle.id,{method:"PUT",body:f});
+      onSave({...f,id:vehicle.id});
+      onClose();
+    } catch(err){alert("Blad: "+err.message);}
+    setSaving(false);
+  };
+
+  return (
+    <Modal title="Edytuj pojazd" sub={vehicle.plate} onClose={onClose} wide>
+      <div style={{display:"grid",gap:12}}>
+        <Field label="Wlasciciel" value={f.client_id} onChange={set("client_id")} options={clients.map(c=>({v:c.id,l:c.name}))}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Marka *" value={f.make} onChange={set("make")} required/>
+          <Field label="Model *" value={f.model} onChange={set("model")} required/>
+          <Field label="Rok" value={f.year} onChange={set("year")} type="number"/>
+          <Field label="Paliwo" value={f.fuel_type} onChange={set("fuel_type")} options={["Benzyna","Diesel","Hybryda","Elektryczny","LPG","CNG"]}/>
+          <Field label="Tablica rejestracyjna *" value={f.plate} onChange={v=>set("plate")(v.toUpperCase())} required/>
+          <Field label="Przebieg (km)" value={f.mileage} onChange={set("mileage")} type="number"/>
+          <Field label="Silnik / Moc" value={f.engine} onChange={set("engine")} placeholder="np. 2.0 TDI 150KM"/>
+          <Field label="Kolor" value={f.color} onChange={set("color")}/>
+        </div>
+        <Field label="VIN (17 znakow)" value={f.vin} onChange={set("vin")} placeholder="WVWZZZ1KZ9W123456"/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={save} loading={saving} disabled={!f.make||!f.model||!f.plate}>Zapisz zmiany</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function Vehicles({vehicles,setVehicles,clients,setModal,isMobile}) {
+  const [search,setSearch]=useState("");
+  const [editVehicle,setEditVehicle]=useState(null);
+  const filtered=vehicles.filter(v=>
+    v.plate.toLowerCase().includes(search.toLowerCase())||
+    v.make.toLowerCase().includes(search.toLowerCase())||
+    v.model.toLowerCase().includes(search.toLowerCase())||
+    (v.vin||"").toLowerCase().includes(search.toLowerCase())
+  );
+
+  const deleteVehicle=async(id,plate)=>{
+    if(!window.confirm("Usunac pojazd "+plate+"? Ta operacja jest nieodwracalna."))return;
+    try {
+      await apiFetch("/vehicles/"+id,{method:"DELETE"});
+      setVehicles(p=>p.filter(v=>v.id!==id));
+    } catch(err){alert("Blad: "+err.message);}
+  };
+
+  return (
+    <div>
+      <SH title="Pojazdy" count={vehicles.length} action={()=>setModal({type:"new_car"})} actionLabel="Dodaj pojazd" actionIcon="+" sub="Wszystkie zarejestrowane pojazdy — kliknij aby edytowac"/>
+      <div style={{marginBottom:14}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Szukaj po tablicy, marce, modelu lub VIN..." style={{...fldSt}}/>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {filtered.map(v=>{
+          const client=clients.find(c=>c.id===v.client_id);
+          return (
+            <Card key={v.id} onClick={()=>setEditVehicle(v)} style={{cursor:"pointer"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:900,fontSize:18,color:T.brand}}>{v.plate}</span>
+                    <Badge color={T.green} bg={T.greenLt}>{v.fuel_type||"—"}</Badge>
+                    {v.year&&<Badge color={T.textMut} bg="#f9fafb">{v.year}</Badge>}
+                  </div>
+                  <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{v.make} {v.model}</div>
+                  <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:13,color:T.textMut}}>
+                    {client&&<span>Wlasciciel: <strong style={{color:T.textSm}}>{client.name}</strong></span>}
+                    {v.mileage>0&&<span>Przebieg: <strong>{(+v.mileage).toLocaleString()} km</strong></span>}
+                    {v.engine&&<span>Silnik: {v.engine}</span>}
+                    {v.color&&<span>Kolor: {v.color}</span>}
+                  </div>
+                  {v.vin&&<div style={{fontSize:12,color:T.textXs,marginTop:4,fontFamily:"monospace"}}>VIN: {v.vin}</div>}
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"flex-start",flexShrink:0}} onClick={e=>e.stopPropagation()}>
+                  <Btn sm outline color={T.brand} onClick={()=>setEditVehicle(v)}>Edytuj</Btn>
+                  <Btn sm ghost danger onClick={()=>deleteVehicle(v.id,v.plate)}>Usun</Btn>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+        {filtered.length===0&&<div style={{textAlign:"center",color:T.textXs,padding:48,fontSize:15}}>Brak pojazdow. Kliknij "Dodaj pojazd" aby dodac pierwszy pojazd.</div>}
+      </div>
+
+      {editVehicle&&(
+        <EditVehicleModal
+          vehicle={editVehicle}
+          clients={clients}
+          onClose={()=>setEditVehicle(null)}
+          onSave={(updated)=>setVehicles(p=>p.map(v=>v.id===updated.id?{...v,...updated}:v))}
+        />
+      )}
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CLIENTS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1003,24 +1114,79 @@ function UsersScreen({currentUser}) {
 }
 
 function Settings({user,onLogout}) {
+  const [firm,setFirm]=useState({name:"",nip:"",address:"",city:"",phone:"",email:"",bank:"",ksef_nip:"",ksef_token:""});
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [saved,setSaved]=useState(false);
+  const setF=k=>v=>setFirm(p=>({...p,[k]:v}));
+
+  useEffect(()=>{
+    apiFetch("/settings").then(d=>{ if(d) setFirm(d); }).catch(()=>{}).finally(()=>setLoading(false));
+  },[]);
+
+  const save=async()=>{
+    setSaving(true);
+    try {
+      await apiFetch("/settings",{method:"POST",body:firm});
+      setSaved(true);
+      setTimeout(()=>setSaved(false),3000);
+    } catch(err){ alert("Blad zapisywania: "+err.message); }
+    setSaving(false);
+  };
+
+  if(loading) return <div style={{textAlign:"center",padding:40,color:T.textMut}}>Ladowanie ustawien...</div>;
+
   return (
     <div>
-      <SH title="Ustawienia" sub="Dane firmy i konfiguracja systemu"/>
-      <Card style={{maxWidth:600,marginBottom:16}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>Dane firmy</div>
+      <SH title="Ustawienia" sub="Dane firmy widoczne na fakturach i dokumentach"/>
+      <Card style={{maxWidth:640,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:16}}>Dane firmy (naglowek faktur i paragonow)</div>
         <div style={{display:"grid",gap:12}}>
-          <Field label="Nazwa firmy" value="Auto Serwis Mod4Cars" onChange={()=>{}}/>
-          <Field label="NIP" value="1234598760" onChange={()=>{}}/>
-          <Field label="Adres" value="ul. Warsztatowa 1, 00-001 Warszawa" onChange={()=>{}}/>
-          <Field label="E-mail" value="biuro@mod4cars.eu" onChange={()=>{}}/>
-          <Field label="Konto bankowe" value="PL61 1090 1014 0000 0712 1981 2874" onChange={()=>{}}/>
+          <Field label="Nazwa firmy *" value={firm.name} onChange={setF("name")} placeholder="np. Auto Serwis XYZ Sp. z o.o." required/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <Field label="NIP *" value={firm.nip} onChange={setF("nip")} placeholder="0000000000" required/>
+            <Field label="Telefon" value={firm.phone} onChange={setF("phone")} placeholder="+48 22 123 45 67"/>
+          </div>
+          <Field label="Adres (ulica i numer)" value={firm.address} onChange={setF("address")} placeholder="ul. Warsztatowa 1"/>
+          <Field label="Kod pocztowy i miasto" value={firm.city} onChange={setF("city")} placeholder="00-001 Warszawa"/>
+          <Field label="E-mail" value={firm.email} onChange={setF("email")} type="email" placeholder="biuro@twojfirma.pl"/>
+          <Field label="Numer konta bankowego (IBAN)" value={firm.bank} onChange={setF("bank")} placeholder="PL61 1090 1014 0000 0712 1981 2874"/>
         </div>
-        <div style={{marginTop:14}}><Btn>Zapisz ustawienia</Btn></div>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:12,marginTop:20}}>Konfiguracja KSeF (opcjonalna)</div>
+        <div style={{display:"grid",gap:12}}>
+          <Field label="NIP do KSeF" value={firm.ksef_nip} onChange={setF("ksef_nip")} placeholder="NIP firmy w KSeF"/>
+          <Field label="Token autoryzacyjny KSeF" value={firm.ksef_token} onChange={setF("ksef_token")} placeholder="Token z portalu podatki.gov.pl" type="password"/>
+        </div>
+        <div style={{marginTop:16,display:"flex",gap:10,alignItems:"center"}}>
+          <Btn onClick={save} loading={saving}>Zapisz ustawienia</Btn>
+          {saved&&<Badge color={T.green} bg={T.greenLt} dot>Zapisano pomyslnie</Badge>}
+        </div>
       </Card>
-      <Card style={{maxWidth:600}}>
-        <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>Sesja</div>
-        <div style={{fontSize:13,color:T.textMut,marginBottom:14}}>Zalogowany jako: <strong>{user.name}</strong> ({ROLE_CFG[user.role]?.label})</div>
-        <Btn outline color={T.red} danger onClick={onLogout} icon="🚪">Wyloguj się</Btn>
+      <Card style={{maxWidth:640,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>Drukarka fiskalna i terminal platniczy</div>
+        <div style={{background:T.yellowLt,border:"1px solid "+T.yellow+"44",borderRadius:10,padding:12,marginBottom:12,fontSize:13,color:T.yellow,fontWeight:600}}>
+          Wymaga uruchomienia WarsztatPro Agent na komputerze w warsztacie (port 8765)
+        </div>
+        <div style={{display:"grid",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <Field label="Adres agenta (domyslnie)" value={firm.agent_url||"http://localhost:8765"} onChange={setF("agent_url")} placeholder="http://localhost:8765"/>
+            <Field label="Port drukarki Posnet (COM)" value={firm.posnet_port||"COM3"} onChange={setF("posnet_port")} placeholder="COM3"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <Field label="ID terminala platniczego" value={firm.terminal_id||""} onChange={setF("terminal_id")} placeholder="T-POS-0042"/>
+            <Field label="Klucz API terminala" value={firm.terminal_key||""} onChange={setF("terminal_key")} placeholder="Z umowy z eService" type="password"/>
+          </div>
+        </div>
+        <div style={{marginTop:12,display:"flex",gap:8"}}>
+          <Btn sm outline color={T.cyan} onClick={()=>window.open("http://localhost:8765","_blank")}>Otworz dashboard agenta</Btn>
+          <Btn sm outline color={T.green} onClick={()=>fetch("http://localhost:8765/api/status").then(r=>r.json()).then(d=>alert("Agent: "+(d.ok?"Online":"Offline"))).catch(()=>alert("Agent offline – uruchom start.bat na komputerze warsztatu"))}>Test polaczenia</Btn>
+        </div>
+      </Card>
+      <Card style={{maxWidth:640,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:15,marginBottom:12}}>Twoje konto</div>
+        <div style={{fontSize:13,color:T.textMut,marginBottom:4}}>Zalogowany jako: <strong>{user.name}</strong></div>
+        <div style={{fontSize:13,color:T.textMut,marginBottom:14}}>Rola: <Badge color={(ROLE_CFG[user.role]||{}).color||T.brand} bg={(ROLE_CFG[user.role]||{}).bg||T.brandLt}>{(ROLE_CFG[user.role]||{}).icon} {(ROLE_CFG[user.role]||{}).label}</Badge></div>
+        <Btn outline color={T.red} danger onClick={onLogout} icon="🚪">Wyloguj sie</Btn>
       </Card>
     </div>
   );
@@ -1053,9 +1219,13 @@ export default function App() {
 
   // Check existing session
   useEffect(()=>{
-    const token=localStorage.getItem("wp_token");
+    const token=localStorage.getItem("wp_token")||sessionStorage.getItem("wp_token");
     if(token){
-      apiFetch("/auth/me").then(u=>setUser(u)).catch(()=>localStorage.removeItem("wp_token")).finally(()=>setLoading(false));
+      fetch("/api/auth/me",{headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"}})
+        .then(r=>r.ok?r.json():null)
+        .then(u=>{ if(u) setUser(u); else { localStorage.removeItem("wp_token"); sessionStorage.removeItem("wp_token"); } })
+        .catch(()=>{ localStorage.removeItem("wp_token"); sessionStorage.removeItem("wp_token"); })
+        .finally(()=>setLoading(false));
     } else setLoading(false);
   },[]);
 
@@ -1063,14 +1233,19 @@ export default function App() {
   useEffect(()=>{
     if(!user)return;
     const rc=ROLE_CFG[user.role]||{};
-    Promise.all([
-      rc.modules.includes("orders")    ? apiFetch("/orders").then(setOrders)       : Promise.resolve(),
-      rc.modules.includes("clients")   ? apiFetch("/clients").then(setClients)     : Promise.resolve(),
-      rc.modules.includes("clients")   ? apiFetch("/vehicles").then(setVehicles)   : Promise.resolve(),
-      rc.modules.includes("warehouse") ? apiFetch("/parts").then(setParts)         : Promise.resolve(),
-      rc.modules.includes("docs")      ? apiFetch("/invoices").then(setInvoices)   : Promise.resolve(),
-      rc.modules.includes("calendar")  ? apiFetch("/calendar").then(setCalEvents)  : Promise.resolve(),
-    ]).catch(console.error);
+    const token=localStorage.getItem("wp_token")||sessionStorage.getItem("wp_token");
+    const load=(path,setter)=>{
+      fetch("/api"+path,{headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"}})
+        .then(r=>r.ok?r.json():[])
+        .then(setter)
+        .catch(()=>setter([]));
+    };
+    if(rc.modules.includes("orders"))    load("/orders",    setOrders);
+    if(rc.modules.includes("clients"))   load("/clients",   setClients);
+    if(rc.modules.includes("clients"))   load("/vehicles",  setVehicles);
+    if(rc.modules.includes("warehouse")) load("/parts",     setParts);
+    if(rc.modules.includes("docs"))      load("/invoices",  setInvoices);
+    if(rc.modules.includes("calendar"))  load("/calendar",  setCalEvents);
   },[user]);
 
   const handleLogin=(u)=>{ setUser(u); };
@@ -1086,6 +1261,7 @@ export default function App() {
     {id:"docs",     icon:"🧾",label:"Dokumenty"},
     {id:"warehouse",icon:"📦",label:"Magazyn"},
     {id:"clients",  icon:"👤",label:"Klienci"},
+    {id:"vehicles", icon:"🚗",label:"Pojazdy"},
     {id:"calendar", icon:"📅",label:"Kalendarz"},
     {id:"reports",  icon:"📊",label:"Raporty"},
     {id:"sms",      icon:"📱",label:"SMS"},
@@ -1147,6 +1323,7 @@ export default function App() {
           {tab==="docs"      &&<Invoices invoices={invoices} clients={clients} setModal={setModal} isMobile={isMobile}/>}
           {tab==="warehouse" &&<Warehouse {...sp}/>}
           {tab==="clients"   &&<Clients {...sp}/>}
+          {tab==="vehicles"  &&<Vehicles vehicles={vehicles} setVehicles={setVehicles} clients={clients} setModal={setModal} isMobile={isMobile}/>}
           {tab==="calendar"  &&<CalendarView events={calEvents} setEvents={setCalEvents} users={users} vehicles={vehicles} orders={orders} isMobile={isMobile}/>}
           {tab==="reports"   &&<Reports isMobile={isMobile}/>}
           {tab==="sms"       &&<SMSModule clients={clients} orders={orders} isMobile={isMobile}/>}
@@ -1167,6 +1344,385 @@ export default function App() {
           ))}
         </nav>
       )}
+
+      {/* MODALS */}
+      {modal?.type==="new_order"&&<NewOrderModal clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{const d=await apiFetch("/orders",{method:"POST",body:o});setOrders(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_client"&&<NewClientModal onClose={()=>setModal(null)} onSave={async c=>{try{const d=await apiFetch("/clients",{method:"POST",body:c});setClients(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_car"&&<NewCarModal clients={clients} onClose={()=>setModal(null)} onSave={async v=>{try{const d=await apiFetch("/vehicles",{method:"POST",body:v});setVehicles(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_part"&&<NewPartModal onClose={()=>setModal(null)} onSave={async p=>{try{const d=await apiFetch("/parts",{method:"POST",body:p});setParts(prev=>[...prev,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_invoice"&&<NewInvoiceModal order={modal.order} clients={clients} onClose={()=>setModal(null)} onSave={async inv=>{try{const d=await apiFetch("/invoices",{method:"POST",body:inv});setInvoices(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_doc_standalone"&&<NewInvoiceModal order={null} clients={clients} onClose={()=>setModal(null)} onSave={async inv=>{try{const d=await apiFetch("/invoices",{method:"POST",body:inv});setInvoices(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
     </div>
+  );
+}
+
+// ── MODAL COMPONENTS ──────────────────────────────────────────────────────────
+
+// ── INLINE VEHICLE FORM (w formularzu zlecenia) ──────────────────────────────
+function InlineVehicleForm({clientId,onSave}) {
+  const [f,setF]=useState({make:"",model:"",year:new Date().getFullYear(),plate:"",vin:"",fuel_type:"Benzyna",engine:"",color:"",mileage:0});
+  const [vinLoading,setVinLoading]=useState(false);
+  const [msg,setMsg]=useState(null);
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  const fetchVIN=async()=>{
+    const vin=f.vin.trim().toUpperCase();
+    if(vin.length!==17){setMsg({ok:false,txt:"VIN musi miec 17 znakow"});return;}
+    setVinLoading(true);setMsg(null);
+    try {
+      const data=await apiFetch("/vin/"+vin);
+      if(data.ok&&data.make){
+        setF(p=>({...p,
+          make:data.make||p.make,
+          model:data.model||p.model,
+          year:data.year||p.year,
+          engine:data.engine||p.engine,
+          fuel_type:data.fuel_type||p.fuel_type,
+        }));
+        setMsg({ok:true,txt:"Dane z NHTSA: "+data.make+" "+data.model+" "+data.year});
+      } else {
+        setMsg({ok:false,txt:data.error||"Nie znaleziono pojazdu dla tego VIN"});
+      }
+    } catch(err){setMsg({ok:false,txt:"Blad pobierania VIN: "+err.message});}
+    setVinLoading(false);
+  };
+
+  return (
+    <div style={{background:T.brandLt,border:"1.5px solid "+T.brand+"44",borderRadius:10,padding:14,marginTop:8}}>
+      <div style={{fontWeight:700,fontSize:13,color:T.brand,marginBottom:10}}>Nowy pojazd dla tego klienta</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div style={{gridColumn:"1 / -1"}}>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,textTransform:"uppercase",letterSpacing:".06em",marginBottom:4}}>VIN (opcjonalny – auto-uzupelni dane)</div>
+          <div style={{display:"flex"}}>
+            <input value={f.vin} onChange={e=>set("vin")(e.target.value.toUpperCase())} placeholder="17-znakowy VIN" maxLength={17}
+              style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1,fontFamily:"monospace",fontSize:13}}/>
+            <button onClick={fetchVIN} disabled={vinLoading||f.vin.length!==17}
+              style={{padding:"0 12px",background:T.green,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:11,cursor:"pointer",opacity:f.vin.length!==17?.4:1}}>
+              {vinLoading?"...":"Dekoduj"}
+            </button>
+          </div>
+          {msg&&<div style={{marginTop:4,fontSize:12,color:msg.ok?T.green:T.red,fontWeight:600}}>{msg.txt}</div>}
+        </div>
+        <Field label="Tablica *" value={f.plate} onChange={v=>set("plate")(v.toUpperCase())} placeholder="WA12345"/>
+        <Field label="Marka *" value={f.make} onChange={set("make")} placeholder="np. Volkswagen"/>
+        <Field label="Model *" value={f.model} onChange={set("model")} placeholder="np. Golf"/>
+        <Field label="Rok" value={f.year} onChange={set("year")} type="number"/>
+        <Field label="Paliwo" value={f.fuel_type} onChange={set("fuel_type")} options={["Benzyna","Diesel","Hybryda","Elektryczny","LPG"]}/>
+        <Field label="Silnik" value={f.engine} onChange={set("engine")} placeholder="np. 2.0 TDI 150KM"/>
+        <Field label="Przebieg (km)" value={f.mileage} onChange={set("mileage")} type="number"/>
+      </div>
+      <div style={{marginTop:10,display:"flex",gap:8}}>
+        <Btn sm onClick={()=>onSave(f)} disabled={!f.make||!f.model||!f.plate} color={T.green}>Dodaj i wybierz pojazd</Btn>
+      </div>
+    </div>
+  );
+}
+
+function NewOrderModal({clients,vehicles,users,onClose,onSave}) {
+  const [clientId,setClientId]=useState(clients[0]?.id||"");
+  const [vehicleId,setVehicleId]=useState("");
+  const [mechanicId,setMechanicId]=useState("");
+  const [description,setDescription]=useState("");
+  const [notes,setNotes]=useState("");
+  const [priority,setPriority]=useState("Normalny");
+  const [deadline,setDeadline]=useState(today());
+  const [items,setItems]=useState([{type:"labor",name:"",qty:1,unit_price:100,vat:23}]);
+  const [showAddVehicle,setShowAddVehicle]=useState(false);
+  const [newVehicles,setNewVehicles]=useState([]);
+  const cVehicles=[...vehicles.filter(v=>v.client_id===+clientId),...newVehicles.filter(v=>v.client_id===+clientId)];
+  const mechanics=(users||[]).filter(u=>u.role==="mechanik"||u.role==="admin");
+  const {net,vatAmt,gross}=calcTotals(items);
+  const setItem=(i,k,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[k]:v}:x));
+  return (
+    <Modal title="Nowe zlecenie serwisowe" onClose={onClose} wide>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+        <Field label="Klient *" value={clientId} onChange={v=>{setClientId(v);setVehicleId("");}} options={[{v:"",l:"— wybierz klienta —"},...clients.map(c=>({v:c.id,l:c.name}))]} required/>
+        <div>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>Pojazd</div>
+          <div style={{display:"flex",gap:6}}>
+            <select value={vehicleId} onChange={e=>setVehicleId(e.target.value)} style={{...fldSt,flex:1}}>
+              <option value="">— wybierz pojazd —</option>
+              {cVehicles.map(v=><option key={v.id} value={v.id}>{v.make} {v.model} ({v.plate})</option>)}
+            </select>
+            {clientId&&<button onClick={()=>setShowAddVehicle(p=>!p)} style={{padding:"0 12px",background:showAddVehicle?T.brand:T.brandLt,color:showAddVehicle?"#fff":T.brand,border:"1.5px solid "+T.brand,borderRadius:9,fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+              {showAddVehicle?"Anuluj":"+ Nowy pojazd"}
+            </button>}
+          </div>
+          {showAddVehicle&&(
+            <InlineVehicleForm clientId={clientId} onSave={async(v)=>{
+              try {
+                const d=await apiFetch("/vehicles",{method:"POST",body:{...v,client_id:+clientId}});
+                setNewVehicles(p=>[...p,d]);
+                setVehicleId(d.id);
+                setShowAddVehicle(false);
+              } catch(err){alert("Blad dodawania pojazdu: "+err.message);}
+            }}/>
+          )}
+        </div>
+        <Field label="Mechanik" value={mechanicId} onChange={setMechanicId} options={[{v:"",l:"— wybierz mechanika —"},...mechanics.map(u=>({v:u.id,l:u.name}))]}/>
+        <Field label="Priorytet" value={priority} onChange={setPriority} options={["Pilny","Normalny","Niski"]}/>
+        <Field label="Termin realizacji" value={deadline} onChange={setDeadline} type="date"/>
+        <div style={{gridColumn:"1 / -1"}}><Field label="Opis prac *" value={description} onChange={setDescription} placeholder="Krótki opis zlecenia..." required/></div>
+        <div style={{gridColumn:"1 / -1"}}><Field label="Notatki" value={notes} onChange={setNotes} placeholder="Uwagi klienta..." rows={2}/></div>
+      </div>
+      <div style={{fontSize:11,color:T.textMut,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Pozycje zlecenia</div>
+      {items.map((it,i)=>(
+        <div key={i} style={{background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>setItem(i,"type","labor")} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid "+(it.type==="labor"?T.purple:T.border),background:it.type==="labor"?T.purpleLt:T.white,color:it.type==="labor"?T.purple:T.textMut,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:600}}>Robocizna</button>
+              <button onClick={()=>setItem(i,"type","part")} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid "+(it.type==="part"?T.brand:T.border),background:it.type==="part"?T.brandLt:T.white,color:it.type==="part"?T.brand:T.textMut,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:600}}>Czesc</button>
+            </div>
+            <button onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:18}}>x</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 70px",gap:8}}>
+            <Field value={it.name} onChange={v=>setItem(i,"name",v)} placeholder="Nazwa pozycji..."/>
+            <Field value={it.qty} onChange={v=>setItem(i,"qty",+v)} type="number"/>
+            <Field value={it.unit_price} onChange={v=>setItem(i,"unit_price",+v)} type="number"/>
+            <Field value={it.vat} onChange={v=>setItem(i,"vat",+v)} options={["23","8","5","0"]}/>
+          </div>
+        </div>
+      ))}
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <Btn sm outline color={T.purple} onClick={()=>setItems(p=>[...p,{type:"labor",name:"",qty:1,unit_price:100,vat:23}])}>+ Robocizna</Btn>
+        <Btn sm outline color={T.brand} onClick={()=>setItems(p=>[...p,{type:"part",name:"",qty:1,unit_price:0,vat:23}])}>+ Czesc</Btn>
+      </div>
+      <div style={{background:T.brandLt,borderRadius:12,padding:14,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:13,color:T.textMut}}>Netto: {fmt(net)} zl  VAT: {fmt(vatAmt)} zl</span>
+        <span style={{fontWeight:900,color:T.green,fontSize:20}}>Brutto: {fmt(gross)} zl</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave({client_id:+clientId,vehicle_id:+vehicleId||null,mechanic_id:+mechanicId||null,priority,description,notes,date_deadline:deadline,items})} disabled={!description||!clientId}>Utworz zlecenie</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function NewClientModal({onClose,onSave}) {
+  const [f,setF]=useState({name:"",nip:"",phone:"",email:"",address:"",city:"",regon:""});
+  const [gusLoading,setGusLoading]=useState(false);
+  const [gusMsg,setGusMsg]=useState(null);
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  const fetchGUS=async()=>{
+    const nip=f.nip.replace(/\D/g,"");
+    if(nip.length!==10){setGusMsg({ok:false,txt:"Wpisz poprawny NIP (10 cyfr)"});return;}
+    setGusLoading(true);setGusMsg(null);
+    try {
+      const data=await apiFetch("/gus/"+nip);
+      if(data.ok){
+        setF(p=>({...p,name:data.name||p.name,address:data.address||p.address,city:data.city||p.city,regon:data.regon||p.regon}));
+        const src=data.source==="CEIDG"?"CEIDG (Ministerstwo Rozwoju)":"GUS";
+        setGusMsg({ok:true,txt:"Dane pobrane z "+src+" dla NIP: "+nip+(data.info?" – "+data.info:"")});
+      } else {
+        setGusMsg({ok:false,txt:data.error||"Nie znaleziono firmy"});
+      }
+    } catch(err){
+      setGusMsg({ok:false,txt:"Blad: "+err.message});
+    }
+    setGusLoading(false);
+  };
+
+  return (
+    <Modal title="Nowy klient" sub="Pobierz dane z GUS BIR po NIP" onClose={onClose}>
+      <div style={{display:"grid",gap:12}}>
+        <div>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>NIP firmy</div>
+          <div style={{display:"flex"}}>
+            <input value={f.nip} onChange={e=>set("nip")(e.target.value)} placeholder="0000000000"
+              style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1}}/>
+            <button onClick={fetchGUS} disabled={gusLoading||!f.nip}
+              style={{padding:"0 14px",background:gusLoading?T.textXs:T.brand,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:!f.nip?.5:1}}>
+              {gusLoading?"...":"Pobierz z GUS"}
+            </button>
+          </div>
+          {gusMsg&&<div style={{marginTop:6,padding:"8px 12px",background:gusMsg.ok?T.greenLt:T.redLt,borderRadius:8,fontSize:13,color:gusMsg.ok?T.green:T.red,fontWeight:600}}>{gusMsg.txt}</div>}
+        </div>
+        <Field label="Nazwa / Imie i nazwisko *" value={f.name} onChange={set("name")} required placeholder="np. Jan Kowalski lub Firma XYZ Sp. z o.o."/>
+        <Field label="REGON" value={f.regon} onChange={set("regon")} placeholder="123456789"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Telefon" value={f.phone} onChange={set("phone")} type="tel" placeholder="+48 600 100 200"/>
+          <Field label="E-mail" value={f.email} onChange={set("email")} type="email" placeholder="email@firma.pl"/>
+        </div>
+        <Field label="Adres (ulica i numer)" value={f.address} onChange={set("address")} placeholder="ul. Przykladowa 1"/>
+        <Field label="Kod pocztowy i miasto" value={f.city} onChange={set("city")} placeholder="00-001 Warszawa"/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave(f)} disabled={!f.name}>Dodaj klienta</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function NewCarModal({clients,onClose,onSave}) {
+  const [f,setF]=useState({client_id:clients[0]?.id||"",make:"",model:"",year:2020,plate:"",vin:"",mileage:0,fuel_type:"Benzyna",engine:"",color:""});
+  const [vinLoading,setVinLoading]=useState(false);
+  const [vinMsg,setVinMsg]=useState(null);
+  const [plateLoading,setPlateLoading]=useState(false);
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  // VIN Decoder – pobieranie danych pojazdu po numerze VIN
+  const fetchVIN=async()=>{
+    const vin=f.vin.trim().toUpperCase();
+    if(vin.length!==17){setVinMsg({ok:false,txt:"VIN musi miec dokladnie 17 znakow"});return;}
+    setVinLoading(true);setVinMsg(null);
+    try {
+      const data=await apiFetch("/vin/"+vin);
+      if(data.ok){
+        setF(p=>({...p,make:data.make||p.make,model:data.model||p.model,year:data.year||p.year,engine:data.engine||p.engine,fuel_type:data.fuel_type||p.fuel_type}));
+        setVinMsg({ok:true,txt:"Dane z NHTSA (baza USA): "+data.make+" "+data.model+" "+data.year+(data.body_type?" · "+data.body_type:"")});
+      } else {
+        setVinMsg({ok:false,txt:data.error||"Nie znaleziono VIN"});
+      }
+    } catch(err){
+      setVinMsg({ok:false,txt:"Blad: "+err.message});
+    }
+    setVinLoading(false);
+  };
+
+  // CEPiK – pobieranie danych po tablicy rejestracyjnej (symulacja)
+  const fetchPlate=async()=>{
+    const plate=f.plate.trim().toUpperCase();
+    if(!plate){setVinMsg({ok:false,txt:"Wpisz numer rejestracyjny"});return;}
+    setPlateLoading(true);setVinMsg(null);
+    try {
+      const data=await apiFetch("/cepik/"+plate);
+      if(data.ok){
+        setF(p=>({...p,make:data.make||p.make,model:data.model||p.model,year:data.year||p.year,vin:data.vin||p.vin,fuel_type:data.fuel_type||p.fuel_type,engine:data.engine||p.engine,color:data.color||p.color,plate}));
+        if(data.info){
+          setVinMsg({ok:false,txt:"CEPiK: "+data.info});
+        } else {
+          setVinMsg({ok:true,txt:"Dane z CEPiK dla tablicy: "+plate+" · "+data.make+" "+data.model+" "+data.year});
+        }
+      } else {
+        setVinMsg({ok:false,txt:data.error||"Nie znaleziono pojazdu"});
+      }
+    } catch(err){
+      setVinMsg({ok:false,txt:"Blad: "+err.message});
+    }
+    setPlateLoading(false);
+  };
+
+  return (
+    <Modal title="Dodaj pojazd" sub="Pobierz dane po VIN lub tablicy rejestracyjnej" onClose={onClose} wide>
+      <div style={{display:"grid",gap:12}}>
+        <Field label="Wlasciciel *" value={f.client_id} onChange={set("client_id")} options={clients.map(c=>({v:c.id,l:c.name}))} required/>
+
+        {/* VIN z przyciskiem */}
+        <div>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>Numer VIN (17 znakow)</div>
+          <div style={{display:"flex"}}>
+            <input value={f.vin} onChange={e=>set("vin")(e.target.value.toUpperCase())} placeholder="np. WVWZZZ1KZ9W123456" maxLength={17}
+              style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1,fontFamily:"monospace"}}/>
+            <button onClick={fetchVIN} disabled={vinLoading||f.vin.length!==17}
+              style={{padding:"0 14px",background:vinLoading?T.textXs:T.green,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:f.vin.length!==17?.5:1}}>
+              {vinLoading?"...":"Dekoduj VIN"}
+            </button>
+          </div>
+          <div style={{fontSize:11,color:T.textXs,marginTop:3}}>Wpisz 17-znakowy VIN aby auto-uzupelnic dane pojazdu (NHTSA)</div>
+        </div>
+
+        {/* Tablica z CEPiK */}
+        <div>
+          <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>Numer rejestracyjny *</div>
+          <div style={{display:"flex"}}>
+            <input value={f.plate} onChange={e=>set("plate")(e.target.value.toUpperCase())} placeholder="np. WA12345"
+              style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1}}/>
+            <button onClick={fetchPlate} disabled={plateLoading||!f.plate}
+              style={{padding:"0 14px",background:plateLoading?T.textXs:T.brand,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:!f.plate?.5:1}}>
+              {plateLoading?"...":"Pobierz CEPiK"}
+            </button>
+          </div>
+          <div style={{fontSize:11,color:T.textXs,marginTop:3}}>Wpisz tablice i kliknij aby pobrac dane z bazy CEPiK</div>
+        </div>
+
+        {vinMsg&&<div style={{padding:"8px 12px",background:vinMsg.ok?T.greenLt:T.redLt,borderRadius:8,fontSize:13,color:vinMsg.ok?T.green:T.red,fontWeight:600}}>{vinMsg.txt}</div>}
+
+        <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginTop:4}}>Dane pojazdu</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Marka *" value={f.make} onChange={set("make")} placeholder="np. Volkswagen"/>
+          <Field label="Model *" value={f.model} onChange={set("model")} placeholder="np. Golf VII"/>
+          <Field label="Rok produkcji" value={f.year} onChange={set("year")} type="number"/>
+          <Field label="Paliwo" value={f.fuel_type} onChange={set("fuel_type")} options={["Benzyna","Diesel","Hybryda","Elektryczny","LPG","CNG"]}/>
+          <Field label="Silnik / Moc" value={f.engine} onChange={set("engine")} placeholder="np. 1968 cm3 150 KM"/>
+          <Field label="Kolor" value={f.color} onChange={set("color")} placeholder="np. Czarny metalik"/>
+          <Field label="Przebieg (km)" value={f.mileage} onChange={set("mileage")} type="number"/>
+        </div>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave(f)} disabled={!f.make||!f.model||!f.plate}>Dodaj pojazd</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function NewPartModal({onClose,onSave}) {
+  const [f,setF]=useState({catalog_no:"",name:"",unit:"szt",buy_price:0,sell_price:0,vat:23,stock:0,min_stock:2,category:"Ogolne",supplier:""});
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+  return (
+    <Modal title="Nowa czesc / towar" onClose={onClose}>
+      <div style={{display:"grid",gap:12}}>
+        <Field label="Nazwa *" value={f.name} onChange={set("name")} required/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Nr katalogowy" value={f.catalog_no} onChange={set("catalog_no")}/>
+          <Field label="Kategoria" value={f.category} onChange={set("category")} options={["Filtry","Oleje","Hamulce","Rozrzad","Zaplon","Zawieszenie","Elektryka","Ogolne"]}/>
+          <Field label="Cena zakupu netto (zl)" value={f.buy_price} onChange={set("buy_price")} type="number"/>
+          <Field label="Cena sprzedazy netto (zl)" value={f.sell_price} onChange={set("sell_price")} type="number"/>
+          <Field label="Stawka VAT (%)" value={f.vat} onChange={set("vat")} options={["23","8","5","0"]}/>
+          <Field label="Jednostka" value={f.unit} onChange={set("unit")} options={["szt","kpl","L","kg","m"]}/>
+          <Field label="Stan magazynowy" value={f.stock} onChange={set("stock")} type="number"/>
+          <Field label="Stan minimalny" value={f.min_stock} onChange={set("min_stock")} type="number"/>
+        </div>
+        <Field label="Dostawca" value={f.supplier} onChange={set("supplier")}/>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave(f)} disabled={!f.name}>Dodaj czesc</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function NewInvoiceModal({order,clients,onClose,onSave}) {
+  const [type,setType]=useState("faktura_vat");
+  const [clientId,setClientId]=useState(order?.client_id||clients[0]?.id||"");
+  const [payment,setPayment]=useState("Przelew");
+  const [dateDue,setDateDue]=useState(()=>{const d=new Date();d.setDate(d.getDate()+14);return d.toISOString().slice(0,10);});
+  const [notes,setNotes]=useState("");
+  const items=order?.items||[];
+  const {net,vatAmt,gross}=calcTotals(items);
+  const types=[{v:"faktura_vat",l:"Faktura VAT"},{v:"faktura_marza",l:"VAT Marza"},{v:"paragon",l:"Paragon"},{v:"wz",l:"WZ"}];
+  return (
+    <Modal title="Wystaw dokument sprzedazy" onClose={onClose}>
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        {types.map(t=>(
+          <button key={t.v} onClick={()=>setType(t.v)} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid "+(type===t.v?T.brand:T.border),background:type===t.v?T.brandLt:T.white,color:type===t.v?T.brand:T.textMut,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+      <div style={{display:"grid",gap:12,marginBottom:14}}>
+        <Field label="Klient" value={clientId} onChange={setClientId} options={clients.map(c=>({v:c.id,l:c.name}))}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Field label="Data wystawienia" value={today()} onChange={()=>{}} type="date"/>
+          <Field label="Termin platnosci" value={dateDue} onChange={setDateDue} type="date"/>
+        </div>
+        <Field label="Forma platnosci" value={payment} onChange={setPayment} options={["Przelew","Gotowka","Karta","BLIK"]}/>
+        <Field label="Uwagi" value={notes} onChange={setNotes} rows={2}/>
+      </div>
+      <div style={{background:T.brandLt,borderRadius:12,padding:14,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:13,color:T.textMut}}>Netto: {fmt(net)} zl  VAT: {fmt(vatAmt)} zl</span>
+        <span style={{fontWeight:900,color:T.green,fontSize:18}}>{fmt(gross)} zl</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={()=>onSave({type,client_id:+clientId,order_id:order?.id||null,buyer_name:clients.find(c=>c.id===+clientId)?.name,buyer_nip:clients.find(c=>c.id===+clientId)?.nip,date_issued:today(),date_sale:today(),date_due:dateDue,payment,net,vat_amt:vatAmt,gross,notes,items})}>
+          Wystaw dokument
+        </Btn>
+      </div>
+    </Modal>
   );
 }
