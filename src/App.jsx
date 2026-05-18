@@ -23,17 +23,19 @@ const DARK = {
   sidebar:"#020617",sidebarHover:"#0f172a",sidebarActive:"#1e40af",sidebarText:"#64748b",sidebarTextActive:"#f1f5f9",
 };
 const LIGHT = {
-  bg:"#f1f5f9",white:"#ffffff",card:"#ffffff",border:"#e2e8f0",
+  bg:"#f0f4f8",white:"#ffffff",card:"#ffffff",border:"#dde3ed",
   brand:"#2563eb",brandDk:"#1d4ed8",brandLt:"#eff6ff",
-  green:"#16a34a",greenLt:"#f0fdf4",greenDk:"#15803d",
+  green:"#059669",greenLt:"#ecfdf5",greenDk:"#047857",
   red:"#dc2626",redLt:"#fef2f2",
   yellow:"#d97706",yellowLt:"#fffbeb",
   purple:"#7c3aed",purpleLt:"#f5f3ff",
   cyan:"#0891b2",cyanLt:"#ecfeff",
   orange:"#ea580c",orangeLt:"#fff7ed",
   text:"#0f172a",textSm:"#334155",textMut:"#64748b",textXs:"#94a3b8",
-  sh1:"0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)",sh2:"0 4px 6px rgba(0,0,0,.07)",sh3:"0 20px 60px rgba(0,0,0,.15)",
-  sidebar:"#0f172a",sidebarHover:"#1e293b",sidebarActive:"#1e40af",sidebarText:"#94a3b8",sidebarTextActive:"#ffffff",
+  sh1:"0 1px 4px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.04)",
+  sh2:"0 4px 12px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.04)",
+  sh3:"0 20px 60px rgba(0,0,0,.15)",
+  sidebar:"#0f172a",sidebarHover:"#1e293b",sidebarActive:"#2563eb",sidebarText:"#94a3b8",sidebarTextActive:"#ffffff",
 };
 
 // Global theme state
