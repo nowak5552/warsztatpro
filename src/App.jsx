@@ -1444,37 +1444,38 @@ function ThemeToggle() {
   const [dark,setDark]=useState(localStorage.getItem("wp_theme")==="dark");
 
   const toggle=()=>{
-    const newTheme=dark?"light":"dark";
+    const newTheme=!dark?"dark":"light";
     localStorage.setItem("wp_theme",newTheme);
-    // Update global T object
-    const newT=newTheme==="dark"?{...DARK}:{...LIGHT};
-    Object.assign(T,newT);
     setDark(!dark);
-    // Force re-render of whole app
-    window.location.reload();
+    // Apply theme without reload
+    const newT=newTheme==="dark"?DARK:LIGHT;
+    Object.keys(newT).forEach(k=>{ T[k]=newT[k]; });
+    // Force React re-render via DOM
+    document.documentElement.setAttribute("data-theme",newTheme);
+    document.body.style.background=newT.bg;
+    // Reload to apply fully
+    setTimeout(()=>window.location.reload(),100);
   };
 
   return (
-    <button onClick={toggle} style={{
-      display:"flex",alignItems:"center",gap:3,
-      background:dark?"#1e293b":"#f1f5f9",
-      border:"2px solid "+(dark?"#334155":"#e2e8f0"),
-      borderRadius:30,padding:"4px 6px",cursor:"pointer",
-      transition:"all .2s",
-    }}>
-      <span style={{fontSize:16}}>{dark?"🌙":"☀️"}</span>
-      <div style={{
-        width:36,height:20,background:dark?"#3b82f6":"#d1d5db",
-        borderRadius:10,position:"relative",transition:"background .2s",
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <span style={{fontSize:12,color:"#94a3b8",fontWeight:600}}>{dark?"Ciemny":"Jasny"}</span>
+      <button onClick={toggle} style={{
+        position:"relative",width:46,height:26,
+        background:dark?"#2563eb":"#d1d5db",
+        border:"none",borderRadius:13,cursor:"pointer",
+        transition:"background .3s",flexShrink:0,
       }}>
         <div style={{
-          width:16,height:16,background:"#fff",borderRadius:"50%",
-          position:"absolute",top:2,left:dark?18:2,transition:"left .2s",
-          boxShadow:"0 1px 3px rgba(0,0,0,.2)",
-        }}/>
-      </div>
-      <span style={{fontSize:16}}>{dark?"☀️":"🌙"}</span>
-    </button>
+          position:"absolute",top:3,left:dark?23:3,
+          width:20,height:20,background:"#fff",borderRadius:"50%",
+          transition:"left .3s",
+          boxShadow:"0 1px 4px rgba(0,0,0,.3)",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          fontSize:11,
+        }}>{dark?"🌙":"☀️"}</div>
+      </button>
+    </div>
   );
 }
 
