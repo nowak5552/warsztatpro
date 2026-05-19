@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    WarsztatPro v3.0  ·  Pełna aplikacja z backendem
@@ -395,12 +395,13 @@ function Orders({orders,setOrders,clients,vehicles,users,setModal,invoices,isMob
 function CalendarView({events,setEvents,users,vehicles,orders,isMobile}) {
   const [view,setView]=useState("week");
   const [currentDate,setCurrentDate]=useState(new Date());
-  const [showAdd,setShowAdd]=useState(false);
-  const [newEvent,setNewEvent]=useState({title:"",mechanic_id:"",start_time:"",end_time:"",color:"#1a56db",description:""});
+  const [clickModal,setClickModal]=useState(null);
+  const [newEvent,setNewEvent]=useState({title:"",mechanic_id:"",start_time:"",end_time:"",color:T.brand,description:""});
   const [saving,setSaving]=useState(false);
+  const [editEvent,setEditEvent]=useState(null);
 
-  const weekDays=["Pon","Wt","Śr","Czw","Pt","Sob","Nie"];
-  const hours=Array.from({length:11},(_,i)=>i+8);
+  const weekDays=["Pon","Wt","Sr","Czw","Pt","Sob","Nie"];
+  const hours=Array.from({length:13},(_,i)=>i+7);
 
   const getWeekDates=()=>{
     const start=new Date(currentDate);
@@ -411,133 +412,174 @@ function CalendarView({events,setEvents,users,vehicles,orders,isMobile}) {
   };
 
   const weekDates=getWeekDates();
-
-  const getEventsForDay=(date)=>events.filter(e=>{
+  const getEventsForSlot=(date,hour)=>events.filter(e=>{
     const ed=new Date(e.start_time);
-    return ed.toDateString()===date.toDateString();
+    return ed.toDateString()===date.toDateString()&&ed.getHours()===hour;
   });
 
-  const addEvent=async()=>{
-    if(!newEvent.title||!newEvent.start_time||!newEvent.end_time)return;
+  const openClickModal=(date,hour)=>{
+    const pad=n=>String(n).padStart(2,"0");
+    const dateStr=`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`;
+    setNewEvent(p=>({...p,start_time:`${dateStr}T${pad(hour)}:00`,end_time:`${dateStr}T${pad(hour+1)}:00`}));
+    setClickModal({date,hour});
+  };
+
+  const saveEvent=async()=>{
+    if(!newEvent.title||!newEvent.start_time)return;
     setSaving(true);
     try {
       const data=await apiFetch("/calendar",{method:"POST",body:newEvent});
       setEvents(p=>[...p,data]);
-      setShowAdd(false);
-      setNewEvent({title:"",mechanic_id:"",start_time:"",end_time:"",color:"#1a56db",description:""});
-    } catch(err){alert("Błąd: "+err.message);}
+      setClickModal(null);
+      setNewEvent({title:"",mechanic_id:"",start_time:"",end_time:"",color:T.brand,description:""});
+    } catch(err){alert("Blad: "+err.message);}
     setSaving(false);
   };
 
-  const deleteEvent=async(id)=>{
-    if(!window.confirm("Usunąć wydarzenie?"))return;
-    await apiFetch(`/calendar/${id}`,{method:"DELETE"});
-    setEvents(p=>p.filter(e=>e.id!==id));
+  const deleteEvent=async(id,e)=>{
+    if(e){e.stopPropagation();}
+    if(!window.confirm("Usunac wizyte?"))return;
+    await apiFetch("/calendar/"+id,{method:"DELETE"});
+    setEvents(p=>p.filter(ev=>ev.id!==id));
+    setEditEvent(null);
   };
 
   const set=k=>v=>setNewEvent(p=>({...p,[k]:v}));
   const mechanics=users.filter(u=>u.role==="mechanik"||u.role==="admin");
+  const COLORS=[T.brand,T.green,T.red,T.yellow,T.purple,T.cyan,"#ec4899","#f97316"];
 
   return (
     <div>
-      <SH title="Harmonogram pracy" sub="Kalendarz mechaników i rezerwacje"/>
-      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+      <SH title="Harmonogram pracy" sub="Kliknij na godzine w kalendarzu aby umowic wizyte"/>
+      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",gap:6}}>
           {["week","list"].map(v=>(
-            <button key={v} onClick={()=>setView(v)} style={{padding:"7px 16px",borderRadius:8,border:`1.5px solid ${view===v?T.brand:T.border}`,background:view===v?T.brandLt:T.white,color:view===v?T.brand:T.textMut,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
-              {v==="week"?"📅 Tydzień":"📋 Lista"}
+            <button key={v} onClick={()=>setView(v)} style={{padding:"7px 16px",borderRadius:9,border:`1.5px solid ${view===v?T.brand:T.border}`,background:view===v?T.brandLt:T.white,color:view===v?T.brand:T.textMut,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>
+              {v==="week"?"Tydzien":"Lista"}
             </button>
           ))}
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <Btn sm outline color={T.brand} onClick={()=>{const d=new Date(currentDate);d.setDate(d.getDate()-7);setCurrentDate(d);}}>←</Btn>
-          <span style={{fontWeight:700,fontSize:14,minWidth:160,textAlign:"center"}}>
+          <Btn sm outline color={T.brand} onClick={()=>{const d=new Date(currentDate);d.setDate(d.getDate()-7);setCurrentDate(d);}}>{"<"}</Btn>
+          <span style={{fontWeight:700,fontSize:14,minWidth:180,textAlign:"center"}}>
             {weekDates[0].toLocaleDateString("pl-PL",{day:"numeric",month:"long"})} – {weekDates[6].toLocaleDateString("pl-PL",{day:"numeric",month:"long",year:"numeric"})}
           </span>
-          <Btn sm outline color={T.brand} onClick={()=>{const d=new Date(currentDate);d.setDate(d.getDate()+7);setCurrentDate(d);}}>→</Btn>
-          <Btn sm outline color={T.brand} onClick={()=>setCurrentDate(new Date())}>Dziś</Btn>
+          <Btn sm outline color={T.brand} onClick={()=>{const d=new Date(currentDate);d.setDate(d.getDate()+7);setCurrentDate(d);}}>{">"}</Btn>
+          <Btn sm color={T.brand} onClick={()=>setCurrentDate(new Date())}>Dzis</Btn>
         </div>
-        <Btn onClick={()=>setShowAdd(p=>!p)} icon="＋">Dodaj</Btn>
+        <div style={{fontSize:12,color:T.textMut}}>Kliknij na pole godziny aby dodac wizyte</div>
       </div>
-
-      {showAdd&&(
-        <Card style={{marginBottom:16}}>
-          <div style={{fontWeight:800,fontSize:15,marginBottom:14}}>Nowe wydarzenie</div>
-          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
-            <div style={{gridColumn:isMobile?"auto":"1 / -1"}}>
-              <Field label="Tytuł *" value={newEvent.title} onChange={set("title")} placeholder="np. Wymiana oleju – Jan K."/>
-            </div>
-            <Field label="Mechanik" value={newEvent.mechanic_id} onChange={set("mechanic_id")} options={[{v:"",l:"— wybierz —"},...mechanics.map(u=>({v:u.id,l:u.name}))]}/>
-            <Field label="Kolor" value={newEvent.color} onChange={set("color")} type="color"/>
-            <Field label="Początek *" value={newEvent.start_time} onChange={set("start_time")} type="datetime-local"/>
-            <Field label="Koniec *" value={newEvent.end_time} onChange={set("end_time")} type="datetime-local"/>
-            <div style={{gridColumn:isMobile?"auto":"1 / -1"}}>
-              <Field label="Opis" value={newEvent.description} onChange={set("description")} rows={2}/>
-            </div>
-          </div>
-          <div style={{marginTop:14,display:"flex",gap:10}}>
-            <Btn onClick={addEvent} loading={saving} disabled={!newEvent.title||!newEvent.start_time||!newEvent.end_time}>Zapisz</Btn>
-            <Btn outline color={T.textMut} onClick={()=>setShowAdd(false)}>Anuluj</Btn>
-          </div>
-        </Card>
-      )}
 
       {view==="week"?(
         <Card noPad style={{overflowX:"auto"}}>
-          <div style={{display:"grid",gridTemplateColumns:`60px repeat(7,1fr)`,minWidth:600}}>
-            <div style={{background:"#f9fafb",borderRight:`1px solid ${T.border}`,borderBottom:`2px solid ${T.border}`,padding:"10px 0"}}/>
+          <div style={{display:"grid",gridTemplateColumns:"56px repeat(7,1fr)",minWidth:700}}>
+            <div style={{background:T.bg,borderRight:`1px solid ${T.border}`,borderBottom:`2px solid ${T.border}`,padding:"10px 0"}}/>
             {weekDates.map((d,i)=>{
               const isToday=d.toDateString()===new Date().toDateString();
+              const dayCount=events.filter(e=>new Date(e.start_time).toDateString()===d.toDateString()).length;
               return (
-                <div key={i} style={{background:isToday?T.brandLt:"#f9fafb",borderRight:`1px solid ${T.border}`,borderBottom:`2px solid ${T.border}`,padding:"10px 8px",textAlign:"center"}}>
-                  <div style={{fontSize:11,color:T.textMut,fontWeight:600}}>{weekDays[i]}</div>
-                  <div style={{fontSize:16,fontWeight:isToday?900:600,color:isToday?T.brand:T.text}}>{d.getDate()}</div>
+                <div key={i} onClick={()=>openClickModal(d,9)}
+                  style={{background:isToday?T.brandLt:T.bg,borderRight:`1px solid ${T.border}`,borderBottom:`2px solid ${T.border}`,padding:"8px",textAlign:"center",cursor:"pointer"}}>
+                  <div style={{fontSize:10,color:T.textMut,fontWeight:700,textTransform:"uppercase",letterSpacing:".06em"}}>{weekDays[i]}</div>
+                  <div style={{fontSize:18,fontWeight:isToday?900:600,color:isToday?T.brand:T.text,marginTop:2}}>{d.getDate()}</div>
+                  {dayCount>0&&<div style={{fontSize:10,color:T.brand,fontWeight:700}}>{dayCount} wizyt</div>}
                 </div>
               );
             })}
             {hours.map(h=>(
-              <>
-                <div key={`h${h}`} style={{borderRight:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}40`,padding:"8px 4px",fontSize:11,color:T.textXs,textAlign:"right",background:"#fafafa"}}>{h}:00</div>
+              <React.Fragment key={h}>
+                <div style={{borderRight:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}22`,padding:"0 6px",fontSize:11,color:T.textXs,textAlign:"right",background:T.bg,display:"flex",alignItems:"center",justifyContent:"flex-end",height:52}}>{h}:00</div>
                 {weekDates.map((d,di)=>{
-                  const dayEvents=getEventsForDay(d).filter(e=>new Date(e.start_time).getHours()===h);
+                  const slotEvents=getEventsForSlot(d,h);
+                  const isToday=d.toDateString()===new Date().toDateString();
                   return (
-                    <div key={`${h}-${di}`} style={{borderRight:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}40`,minHeight:50,padding:2,position:"relative"}}>
-                      {dayEvents.map(e=>(
-                        <div key={e.id} onClick={()=>deleteEvent(e.id)} style={{background:e.color||T.brand,color:"#fff",borderRadius:4,padding:"2px 6px",fontSize:11,fontWeight:600,cursor:"pointer",marginBottom:2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}} title={`${e.title}\n${e.mechanic_name||""}\nKliknij aby usunąć`}>
-                          {e.title}
+                    <div key={h+"-"+di}
+                      onClick={()=>openClickModal(d,h)}
+                      style={{borderRight:`1px solid ${T.border}`,borderBottom:`1px solid ${T.border}22`,height:52,padding:2,position:"relative",cursor:"pointer",background:isToday?"rgba(59,130,246,.02)":"transparent",transition:"background .1s"}}
+                      onMouseEnter={e=>{if(!slotEvents.length)e.currentTarget.style.background=T.brandLt+"88";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background=isToday?"rgba(59,130,246,.02)":"transparent";}}>
+                      {slotEvents.map(ev=>(
+                        <div key={ev.id} onClick={e=>{e.stopPropagation();setEditEvent(ev);}}
+                          style={{background:ev.color||T.brand,color:"#fff",borderRadius:5,padding:"2px 6px 2px 6px",fontSize:11,fontWeight:600,marginBottom:1,overflow:"hidden",cursor:"pointer",position:"relative",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}>
+                          <div style={{whiteSpace:"nowrap",textOverflow:"ellipsis",overflow:"hidden",paddingRight:14}}>{ev.title}</div>
+                          <button onClick={e=>deleteEvent(ev.id,e)}
+                            style={{position:"absolute",top:1,right:2,background:"rgba(0,0,0,.3)",border:"none",color:"#fff",borderRadius:3,width:13,height:13,cursor:"pointer",fontSize:9,lineHeight:"13px",textAlign:"center",padding:0}}>x</button>
                         </div>
                       ))}
                     </div>
                   );
                 })}
-              </>
+              </React.Fragment>
             ))}
           </div>
         </Card>
       ):(
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {events.length===0&&<div style={{textAlign:"center",color:T.textXs,padding:40}}>Brak wydarzeń w kalendarzu</div>}
-          {events.sort((a,b)=>new Date(a.start_time)-new Date(b.start_time)).map(e=>(
-            <Card key={e.id}>
+          {events.length===0&&<div style={{textAlign:"center",color:T.textXs,padding:40}}>Brak wizyt. Kliknij na pole kalendarza tygodniowego aby dodac.</div>}
+          {[...events].sort((a,b)=>new Date(a.start_time)-new Date(b.start_time)).map(e=>(
+            <Card key={e.id} onClick={()=>setEditEvent(e)}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12}}>
                 <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-                  <div style={{width:14,height:14,borderRadius:4,background:e.color||T.brand,flexShrink:0,marginTop:3}}/>
+                  <div style={{width:4,alignSelf:"stretch",borderRadius:4,background:e.color||T.brand,flexShrink:0,minHeight:40}}/>
                   <div>
-                    <div style={{fontWeight:700,fontSize:15}}>{e.title}</div>
-                    <div style={{fontSize:13,color:T.textMut}}>👤 {e.mechanic_name||"—"} · 🚗 {e.plate||"—"}</div>
-                    <div style={{fontSize:12,color:T.textXs}}>{new Date(e.start_time).toLocaleString("pl-PL")} – {new Date(e.end_time).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}</div>
+                    <div style={{fontWeight:700,fontSize:15,marginBottom:3}}>{e.title}</div>
+                    <div style={{fontSize:13,color:T.textMut}}>Mechanik: {e.mechanic_name||"— brak"}</div>
+                    <div style={{fontSize:12,color:T.textXs,marginTop:2}}>{new Date(e.start_time).toLocaleString("pl-PL",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"})} – {new Date(e.end_time).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}</div>
                     {e.description&&<div style={{fontSize:13,color:T.textSm,marginTop:4}}>{e.description}</div>}
                   </div>
                 </div>
-                <Btn sm ghost danger onClick={()=>deleteEvent(e.id)}>🗑️</Btn>
+                <Btn sm ghost danger onClick={ev=>{ev.stopPropagation();deleteEvent(e.id,null);}}>Usun</Btn>
               </div>
             </Card>
           ))}
         </div>
       )}
+
+      {clickModal&&(
+        <Modal title="Nowa wizyta" sub={`${clickModal.date.toLocaleDateString("pl-PL",{weekday:"long",day:"numeric",month:"long"})} · godz. ${clickModal.hour}:00`} onClose={()=>setClickModal(null)} wide>
+          <div style={{display:"grid",gap:12}}>
+            <Field label="Tytul wizyty *" value={newEvent.title} onChange={set("title")} placeholder="np. Wymiana oleju – Jan Kowalski" required/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <Field label="Mechanik" value={newEvent.mechanic_id} onChange={set("mechanic_id")} options={[{v:"",l:"— brak przypisania —"},...mechanics.map(u=>({v:u.id,l:u.name}))]}/>
+              <div>
+                <div style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:".07em",textTransform:"uppercase",marginBottom:6}}>Kolor wizyty</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {COLORS.map(c=>(
+                    <button key={c} onClick={()=>set("color")(c)} style={{width:26,height:26,borderRadius:"50%",background:c,border:newEvent.color===c?"3px solid "+T.text:"2px solid transparent",cursor:"pointer",transform:newEvent.color===c?"scale(1.2)":"scale(1)",transition:"transform .15s"}}/>
+                  ))}
+                </div>
+              </div>
+              <Field label="Poczatek" value={newEvent.start_time} onChange={set("start_time")} type="datetime-local"/>
+              <Field label="Koniec" value={newEvent.end_time} onChange={set("end_time")} type="datetime-local"/>
+            </div>
+            <Field label="Notatki" value={newEvent.description} onChange={set("description")} rows={2} placeholder="Dodatkowe informacje..."/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:20}}>
+            <Btn outline color={T.textMut} onClick={()=>setClickModal(null)}>Anuluj</Btn>
+            <Btn onClick={saveEvent} loading={saving} disabled={!newEvent.title}>Zapisz wizyte</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {editEvent&&(
+        <Modal title="Szczegoly wizyty" sub={editEvent.title} onClose={()=>setEditEvent(null)}>
+          <div style={{padding:16,background:T.bg,borderRadius:10,borderLeft:`4px solid ${editEvent.color||T.brand}`,marginBottom:16}}>
+            <div style={{fontWeight:800,fontSize:16,marginBottom:8}}>{editEvent.title}</div>
+            <div style={{fontSize:13,color:T.textMut,marginBottom:4}}>Mechanik: {editEvent.mechanic_name||"— brak"}</div>
+            <div style={{fontSize:13,color:T.textMut}}>Czas: {new Date(editEvent.start_time).toLocaleString("pl-PL")} – {new Date(editEvent.end_time).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}</div>
+            {editEvent.description&&<div style={{fontSize:13,color:T.textSm,marginTop:8}}>{editEvent.description}</div>}
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <Btn outline color={T.red} danger onClick={()=>deleteEvent(editEvent.id,null)}>Usun wizyte</Btn>
+            <Btn outline color={T.textMut} onClick={()=>setEditEvent(null)}>Zamknij</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
+
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // VEHICLE HISTORY (Karta serwisowa)
