@@ -10,17 +10,17 @@ const API = "/api";
 // T is set dynamically based on theme (see LIGHT/DARK above)
 // ── DARK THEME ────────────────────────────────────────────────────────────────
 const DARK = {
-  bg:"#0f172a",white:"#1e293b",card:"#1e293b",border:"#334155",
-  brand:"#3b82f6",brandDk:"#2563eb",brandLt:"rgba(59,130,246,.15)",
-  green:"#22c55e",greenLt:"rgba(34,197,94,.12)",greenDk:"#16a34a",
-  red:"#f87171",redLt:"rgba(248,113,113,.12)",
-  yellow:"#fbbf24",yellowLt:"rgba(251,191,36,.12)",
-  purple:"#a78bfa",purpleLt:"rgba(167,139,250,.12)",
+  bg:"#0a0f1e",white:"#111827",card:"#111827",border:"rgba(255,255,255,.07)",
+  brand:"#3b82f6",brandDk:"#2563eb",brandLt:"rgba(59,130,246,.12)",
+  green:"#10b981",greenLt:"rgba(16,185,129,.12)",greenDk:"#059669",
+  red:"#ef4444",redLt:"rgba(239,68,68,.12)",
+  yellow:"#f59e0b",yellowLt:"rgba(245,158,11,.12)",
+  purple:"#6366f1",purpleLt:"rgba(99,102,241,.12)",
   cyan:"#22d3ee",cyanLt:"rgba(34,211,238,.12)",
-  orange:"#fb923c",orangeLt:"rgba(251,146,60,.12)",
-  text:"#f1f5f9",textSm:"#cbd5e1",textMut:"#94a3b8",textXs:"#64748b",
-  sh1:"0 1px 3px rgba(0,0,0,.3)",sh2:"0 4px 6px rgba(0,0,0,.4)",sh3:"0 20px 60px rgba(0,0,0,.6)",
-  sidebar:"#020617",sidebarHover:"#0f172a",sidebarActive:"#1e40af",sidebarText:"#64748b",sidebarTextActive:"#f1f5f9",
+  orange:"#f97316",orangeLt:"rgba(249,115,22,.12)",
+  text:"#f1f5f9",textSm:"#cbd5e1",textMut:"#64748b",textXs:"#334155",
+  sh1:"0 1px 4px rgba(0,0,0,.3)",sh2:"0 8px 24px rgba(0,0,0,.4)",sh3:"0 25px 80px rgba(0,0,0,.6)",
+  sidebar:"#111827",sidebarHover:"#1a2235",sidebarActive:"#3b82f6",sidebarText:"#64748b",sidebarTextActive:"#f1f5f9",
 };
 const LIGHT = {
   bg:"#f0f4f8",white:"#ffffff",card:"#ffffff",border:"#dde3ed",
@@ -38,8 +38,8 @@ const LIGHT = {
   sidebar:"#0f172a",sidebarHover:"#1e293b",sidebarActive:"#2563eb",sidebarText:"#94a3b8",sidebarTextActive:"#ffffff",
 };
 
-// Global theme state
-let _theme = localStorage.getItem("wp_theme")||"light";
+// Global theme state - dark by default
+let _theme = localStorage.getItem("wp_theme")||"dark";
 let T = _theme==="dark" ? {...DARK} : {...LIGHT};
 
 const fmt = n => new Intl.NumberFormat("pl-PL",{minimumFractionDigits:2,maximumFractionDigits:2}).format(+n||0);
@@ -208,7 +208,7 @@ function LoginPage({onLogin}) {
 
   return (
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0f1729,#1a2f5c,#0f1729)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'Inter','Segoe UI',sans-serif",position:"relative",overflow:"hidden"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');@keyframes spin{to{transform:rotate(360deg)}}@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}.fade-up{animation:fadeUp .5s ease both}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');*{box-sizing:border-box}@keyframes spin{to{transform:rotate(360deg)}}@keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${T.border};border-radius:4px}input:focus,select:focus,textarea:focus{outline:none;border-color:${T.brand}!important;box-shadow:0 0 0 3px ${T.brand}18!important}input:disabled,select:disabled{opacity:.6}body{background:${T.bg};margin:0;font-family:'DM Sans',sans-serif}`}</style>
       <div style={{position:"absolute",width:400,height:400,borderRadius:"50%",background:"rgba(26,86,219,.08)",top:-100,right:-100,pointerEvents:"none"}}/>
       <div style={{position:"absolute",width:300,height:300,borderRadius:"50%",background:"rgba(26,86,219,.06)",bottom:-80,left:-80,pointerEvents:"none"}}/>
       <div style={{width:"100%",maxWidth:420}}>
