@@ -1639,52 +1639,93 @@ export default function App() {
 
   const sp={orders,setOrders,clients,setClients,vehicles,setVehicles,parts,setParts,invoices,setInvoices,users,setUsers,isMobile,setModal};
 
-  return (
-    <div style={{display:"flex",minHeight:"100vh",background:T.bg,fontFamily:"'Inter','Segoe UI',sans-serif",color:T.text}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');*{box-sizing:border-box}@keyframes spin{to{transform:rotate(360deg)}}::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:#f1f5f9}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}input:focus,select:focus,textarea:focus{outline:none;border-color:#1a56db!important;box-shadow:0 0 0 3px #1a56db18}`}</style>
+  const NAV_SECTIONS = [
+    {label:"Glowne", items:["dashboard","orders","docs"]},
+    {label:"Zasoby", items:["warehouse","clients","vehicles"]},
+    {label:"Narzedzia", items:["calendar","reports","sms","payments","ksef"]},
+    {label:"Admin", items:["users","settings"]},
+  ];
 
-      {/* SIDEBAR */}
+  return (
+    <div style={{display:"flex",minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',sans-serif",color:T.text}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');*{box-sizing:border-box}@keyframes spin{to{transform:rotate(360deg)}}@keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${T.border};border-radius:4px}input:focus,select:focus,textarea:focus{outline:none;border-color:${T.brand}!important;box-shadow:0 0 0 3px ${T.brand}18!important}input:disabled,select:disabled{opacity:.6}body{background:${T.bg};margin:0;font-family:'DM Sans',sans-serif}`}</style>
+
+      {/* NEW SIDEBAR */}
       {!isMobile&&(
-        <nav style={{width:230,background:T.white,borderRight:`1px solid ${T.border}`,display:"flex",flexDirection:"column",padding:"0 10px",position:"fixed",top:0,bottom:0,left:0,zIndex:100,boxShadow:"2px 0 16px rgba(0,0,0,.04)"}}>
-          <div style={{padding:"20px 10px 16px",borderBottom:`1px solid ${T.border}`,marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:34,height:34,background:"linear-gradient(135deg,#1a56db,#1344b5)",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        <nav style={{width:240,background:T.white,borderRight:`1px solid ${T.border}`,display:"flex",flexDirection:"column",position:"fixed",top:0,bottom:0,left:0,zIndex:100}}>
+          {/* Logo */}
+          <div style={{padding:"22px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:36,height:36,background:"linear-gradient(135deg,"+T.brand+","+T.purple+")",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 4px 14px "+T.purple+"44"}}>
               <svg width="20" height="20" viewBox="0 0 40 40" fill="none"><path d="M26 8c-2.8 0-5 2.2-5 5 0 .6.1 1.2.3 1.7L9.7 26.3a1 1 0 000 1.4l2.6 2.6a1 1 0 001.4 0L25.3 18.7c.5.2 1.1.3 1.7.3 2.8 0 5-2.2 5-5 0-.5-.1-1-.2-1.4l-2.9 2.9-2.1-.7-.7-2.1 2.9-2.9C28 9.7 27.1 8 26 8z" fill="white"/></svg>
             </div>
-            <div><div style={{fontSize:16,fontWeight:900,letterSpacing:"-0.03em"}}>Warsztat<span style={{color:T.brand}}>Pro</span></div><div style={{fontSize:9,color:T.textXs,letterSpacing:".1em",fontWeight:700,textTransform:"uppercase"}}>SYSTEM v2.0</div></div>
+            <div>
+              <div style={{fontSize:17,fontWeight:800,letterSpacing:"-.03em",color:T.text}}>Warsztat<span style={{color:T.brand}}>Pro</span></div>
+              <div style={{fontSize:10,color:T.textMut,letterSpacing:".12em",fontWeight:600,textTransform:"uppercase"}}>System v3.0</div>
+            </div>
           </div>
-          <div style={{flex:1,overflowY:"auto",padding:"4px 0"}}>
-            {TABS.map(t=>{const active=tab===t.id;return(
-              <button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:"none",background:active?T.brandLt:"transparent",color:active?T.brand:T.textMut,fontWeight:active?700:500,fontSize:14,cursor:"pointer",textAlign:"left",width:"100%",marginBottom:2,transition:"all .15s",fontFamily:"inherit",borderLeft:`3px solid ${active?T.brand:"transparent"}`}}>
-                <span style={{fontSize:16}}>{t.icon}</span>{t.label}
-              </button>
-            );})}
+
+          {/* Nav */}
+          <div style={{flex:1,overflowY:"auto",padding:"10px 10px"}}>
+            {NAV_SECTIONS.map(section=>{
+              const sectionTabs=TABS.filter(t=>section.items.includes(t.id));
+              if(!sectionTabs.length) return null;
+              return (
+                <div key={section.label}>
+                  <div style={{fontSize:10,color:T.textMut,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",padding:"14px 10px 6px"}}>{section.label}</div>
+                  {sectionTabs.map(t=>{
+                    const active=tab===t.id;
+                    return (
+                      <button key={t.id} onClick={()=>setTab(t.id)}
+                        style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:`1px solid ${active?T.brand+"33":"transparent"}`,background:active?T.brandLt:"transparent",color:active?T.brand:T.textMut,fontWeight:active?600:400,fontSize:14,cursor:"pointer",textAlign:"left",width:"100%",marginBottom:2,transition:"all .15s",fontFamily:"inherit"}}>
+                        <span style={{fontSize:15,width:20,textAlign:"center"}}>{t.icon}</span>
+                        <span style={{flex:1}}>{t.label}</span>
+                        {active&&<div style={{width:6,height:6,borderRadius:"50%",background:T.brand,flexShrink:0}}/>}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
-          <div style={{padding:"14px 10px",borderTop:`1px solid ${T.border}`}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-              <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${rc.color},${rc.color}bb)`,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:900,fontSize:13,flexShrink:0}}>{user.avatar}</div>
+
+          {/* Theme toggle */}
+          <div style={{padding:"10px 10px 0",borderTop:`1px solid ${T.border}`}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderRadius:10,background:T.bg,marginBottom:8}}>
+              <span style={{fontSize:12,color:T.textMut,fontWeight:600}}>Motyw</span>
+              <ThemeToggle/>
+            </div>
+          </div>
+
+          {/* User */}
+          <div style={{padding:"10px 10px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,background:T.bg,marginBottom:8}}>
+              <div style={{width:34,height:34,borderRadius:9,background:"linear-gradient(135deg,"+rc.color+","+rc.color+"bb)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:13,flexShrink:0}}>{(user.name||"U").slice(0,2).toUpperCase()}</div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.name}</div>
-                <Badge color={rc.color} bg={rc.bg}>{rc.icon} {rc.label}</Badge>
+                <div style={{fontWeight:600,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}}>{user.name}</div>
+                <div style={{fontSize:11,color:T.textMut}}>{rc.icon} {rc.label}</div>
               </div>
             </div>
-            <button onClick={handleLogout} style={{width:"100%",background:T.redLt,border:`1px solid ${T.red}30`,borderRadius:8,color:T.red,padding:"8px",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>🚪 Wyloguj się</button>
+            <button onClick={handleLogout} style={{width:"100%",background:T.redLt,border:`1px solid ${T.red}22`,borderRadius:9,color:T.red,padding:"8px",fontFamily:"inherit",fontWeight:600,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,transition:"all .15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.background=T.red;e.currentTarget.style.color="#fff";}}
+              onMouseLeave={e=>{e.currentTarget.style.background=T.redLt;e.currentTarget.style.color=T.red;}}>
+              🚪 Wyloguj się
+            </button>
           </div>
         </nav>
       )}
 
-      <main style={{marginLeft:isMobile?0:230,flex:1,padding:isMobile?"0 0 80px":"28px 32px"}}>
+      <main style={{marginLeft:isMobile?0:240,flex:1,minHeight:"100vh"}}>
+        {/* Mobile header */}
         {isMobile&&(
-          <div style={{background:T.white,borderBottom:`1px solid ${T.border}`,padding:"14px 16px",position:"sticky",top:0,zIndex:50,boxShadow:T.sh1}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div style={{fontSize:16,fontWeight:900}}>Warsztat<span style={{color:T.brand}}>Pro</span></div>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <Badge color={rc.color} bg={rc.bg}>{rc.icon} {rc.label}</Badge>
-                <button onClick={handleLogout} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:20}}>🚪</button>
-              </div>
+          <div style={{background:T.white,borderBottom:`1px solid ${T.border}`,padding:"14px 16px",position:"sticky",top:0,zIndex:50,boxShadow:T.sh1,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div style={{fontSize:16,fontWeight:800}}>Warsztat<span style={{color:T.brand}}>Pro</span></div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <ThemeToggle/>
+              <button onClick={handleLogout} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:20}}>🚪</button>
             </div>
           </div>
         )}
-        <div style={{padding:isMobile?"16px":0}}>
+        <div style={{padding:isMobile?"16px":"28px 32px",maxWidth:1400}}>
           {tab==="dashboard" &&<Dashboard user={user} {...sp}/>}
           {tab==="orders"    &&<Orders {...sp}/>}
           {tab==="docs"      &&<Invoices invoices={invoices} clients={clients} setModal={setModal} isMobile={isMobile}/>}
