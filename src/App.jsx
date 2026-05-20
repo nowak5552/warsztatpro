@@ -429,6 +429,7 @@ function Orders({orders,setOrders,clients,vehicles,users,setModal,invoices,isMob
                     {!hasInv&&o.status!=="Anulowane"&&(
                       <Btn sm outline color={T.brand} onClick={e=>{e.stopPropagation();setModal({type:"new_invoice",order:o});}}>🧾 Dok.</Btn>
                     )}
+                    <Btn sm outline color={T.purple} onClick={e=>{e.stopPropagation();setModal({type:"edit_order",order:o});}}>✏️ Edytuj</Btn>
                     <Btn sm outline color={T.red} danger onClick={e=>{e.stopPropagation();deleteOrder(o.id,o.order_no);}}>🗑️</Btn>
                   </div>
                 </div>
@@ -1982,6 +1983,7 @@ export default function App() {
         </nav>
       )}
 
+            {modal?.type==="edit_order"&&<EditOrderModal order={modal.order} clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{await apiFetch("/orders/"+modal.order.id,{method:"PUT",body:o});setOrders(p=>p.map(x=>x.id===modal.order.id?{...x,...o}:x));}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>
       {/* MODALS */}
       {modal?.type==="new_order"&&<NewOrderModal clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{const d=await apiFetch("/orders",{method:"POST",body:o});setOrders(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
       {modal?.type==="new_client"&&<NewClientModal onClose={()=>setModal(null)} onSave={async c=>{try{const d=await apiFetch("/clients",{method:"POST",body:c});setClients(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
@@ -2359,6 +2361,87 @@ function NewInvoiceModal({order,clients,onClose,onSave}) {
         <Btn onClick={()=>onSave({type,client_id:+clientId,order_id:order?.id||null,buyer_name:clients.find(c=>c.id===+clientId)?.name,buyer_nip:clients.find(c=>c.id===+clientId)?.nip,date_issued:today(),date_sale:today(),date_due:dateDue,payment,net,vat_amt:vatAmt,gross,notes,items})}>
           Wystaw dokument
         </Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================
+// EDIT ORDER MODAL
+// ============================================================
+function EditOrderModal({order,clients,vehicles,users,onClose,onSave}) {
+  const [clientId,setClientId]=useState(order.client_id||clients[0]?.id||"");
+  const [vehicleId,setVehicleId]=useState(order.vehicle_id||"");
+  const [mechanicId,setMechanicId]=useState(order.mechanic_id||"");
+  const [description,setDescription]=useState(order.description||"");
+  const [notes,setNotes]=useState(order.notes||"");
+  const [priority,setPriority]=useState(order.priority||"Normalny");
+  const [status,setStatus]=useState(order.status||"Nowe");
+  const [deadline,setDeadline]=useState(order.date_deadline?order.date_deadline.slice(0,10):today());
+  const [items,setItems]=useState(order.items||[{type:"labor",name:"",qty:1,unit_price:100,vat:23}]);
+  const [loading,setLoading]=useState(false);
+
+  const cVehicles=vehicles.filter(v=>v.client_id===+clientId);
+  const mechanics=(users||[]).filter(u=>u.role==="mechanik"||u.role==="admin");
+  const {net,vatAmt,gross}=calcTotals(items);
+  const setItem=(i,k,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[k]:v}:x));
+
+  // Ładuj pozycje zlecenia jeśli nie ma
+  useState(()=>{
+    if(!order.items){
+      apiFetch("/orders/"+order.id+"/items").then(data=>{
+        if(data&&data.length>0) setItems(data);
+      }).catch(()=>{});
+    }
+  },[]);
+
+  const handleSave=async()=>{
+    setLoading(true);
+    await onSave({client_id:+clientId,vehicle_id:+vehicleId||null,mechanic_id:+mechanicId||null,priority,status,description,notes,date_deadline:deadline,items});
+    setLoading(false);
+  };
+
+  return (
+    <Modal title={"Edytuj zlecenie "+order.order_no} onClose={onClose} wide>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+        <Field label="Klient *" value={clientId} onChange={v=>{setClientId(v);setVehicleId("");}} options={[{v:"",l:"— wybierz klienta —"},...clients.map(c=>({v:c.id,l:c.name}))]} required/>
+        <Field label="Pojazd" value={vehicleId} onChange={setVehicleId} options={[{v:"",l:"— wybierz pojazd —"},...cVehicles.map(v=>({v:v.id,l:v.make+" "+v.model+" ("+v.plate+")"}))]}/> 
+        <Field label="Mechanik" value={mechanicId} onChange={setMechanicId} options={[{v:"",l:"— wybierz mechanika —"},...mechanics.map(u=>({v:u.id,l:u.name}))]}/>
+        <Field label="Priorytet" value={priority} onChange={setPriority} options={["Pilny","Normalny","Niski"]}/>
+        <Field label="Status" value={status} onChange={setStatus} options={["Nowe","W trakcie","Gotowe","Wydane","Anulowane"]}/>
+        <Field label="Termin realizacji" value={deadline} onChange={setDeadline} type="date"/>
+        <div style={{gridColumn:"1 / -1"}}><Field label="Opis prac *" value={description} onChange={setDescription} placeholder="Krótki opis zlecenia..." required/></div>
+        <div style={{gridColumn:"1 / -1"}}><Field label="Notatki" value={notes} onChange={setNotes} placeholder="Uwagi klienta..." rows={2}/></div>
+      </div>
+      <div style={{fontSize:11,color:T.textMut,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Pozycje zlecenia</div>
+      {items.map((it,i)=>(
+        <div key={i} style={{background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>setItem(i,"type","labor")} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid "+(it.type==="labor"?T.purple:T.border),background:it.type==="labor"?T.purpleLt:T.white,color:it.type==="labor"?T.purple:T.textMut,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:600}}>Robocizna</button>
+              <button onClick={()=>setItem(i,"type","part")} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid "+(it.type==="part"?T.brand:T.border),background:it.type==="part"?T.brandLt:T.white,color:it.type==="part"?T.brand:T.textMut,fontFamily:"inherit",cursor:"pointer",fontSize:12,fontWeight:600}}>Czesc</button>
+            </div>
+            <button onClick={()=>setItems(p=>p.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:18}}>✕</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 70px",gap:8}}>
+            <Field value={it.name} onChange={v=>setItem(i,"name",v)} placeholder="Nazwa pozycji..."/>
+            <Field value={it.qty} onChange={v=>setItem(i,"qty",+v)} type="number"/>
+            <Field value={it.unit_price} onChange={v=>setItem(i,"unit_price",+v)} type="number"/>
+            <Field value={it.vat} onChange={v=>setItem(i,"vat",+v)} options={["23","8","5","0"]}/>
+          </div>
+        </div>
+      ))}
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <Btn sm outline color={T.purple} onClick={()=>setItems(p=>[...p,{type:"labor",name:"",qty:1,unit_price:100,vat:23}])}>+ Robocizna</Btn>
+        <Btn sm outline color={T.brand} onClick={()=>setItems(p=>[...p,{type:"part",name:"",qty:1,unit_price:0,vat:23}])}>+ Czesc</Btn>
+      </div>
+      <div style={{background:T.brandLt,borderRadius:12,padding:14,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:13,color:T.textMut}}>Netto: {fmt(net)} zł  VAT: {fmt(vatAmt)} zł</span>
+        <span style={{fontWeight:900,color:T.green,fontSize:20}}>Brutto: {fmt(gross)} zł</span>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+        <Btn outline color={T.textMut} onClick={onClose}>Anuluj</Btn>
+        <Btn onClick={handleSave} disabled={!description||!clientId||loading}>{loading?"Zapisywanie...":"Zapisz zmiany"}</Btn>
       </div>
     </Modal>
   );
