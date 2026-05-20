@@ -182,9 +182,62 @@ const PRI_CFG={
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
+// REGISTER PAGE — nowy warsztat
+// ══════════════════════════════════════════════════════════════════════════════
+function RegisterPage({onBack,onRegister}) {
+  const [f,setF]=useState({workshopName:"",ownerName:"",email:"",password:"",nip:"",phone:""});
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const set=k=>v=>setF(p=>({...p,[k]:v}));
+
+  const register=async()=>{
+    setError("");
+    if(!f.workshopName||!f.email||!f.password){setError("Wypełnij wszystkie wymagane pola");return;}
+    if(f.password.length<8){setError("Hasło musi mieć minimum 8 znaków");return;}
+    setLoading(true);
+    try {
+      const data=await apiFetch("/tenants/register",{method:"POST",body:f});
+      localStorage.setItem("wp_token",data.token);
+      onRegister(data);
+    } catch(err){setError(err.message);}
+    setLoading(false);
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0a0f1e,#1a2f5c,#0a0f1e)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Sans',sans-serif"}}>
+      <div style={{width:"100%",maxWidth:480}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:24,fontWeight:900,color:"#fff",letterSpacing:"-.03em"}}>Warsztat<span style={{color:"#60a5fa"}}>Pro</span></div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginTop:6}}>Załóż konto dla swojego warsztatu — 14 dni gratis</div>
+        </div>
+        <div style={{background:"rgba(255,255,255,.97)",borderRadius:20,padding:32,boxShadow:"0 24px 80px rgba(0,0,0,.3)"}}>
+          <div style={{fontWeight:800,fontSize:18,marginBottom:20,color:T.text}}>Rejestracja warsztatu</div>
+          <div style={{display:"grid",gap:12}}>
+            <Field label="Nazwa warsztatu *" value={f.workshopName} onChange={set("workshopName")} placeholder="np. Auto Serwis Nowak" required/>
+            <Field label="Imię i nazwisko właściciela *" value={f.ownerName} onChange={set("ownerName")} placeholder="np. Jan Nowak" required/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <Field label="NIP warsztatu" value={f.nip} onChange={set("nip")} placeholder="0000000000"/>
+              <Field label="Telefon" value={f.phone} onChange={set("phone")} type="tel" placeholder="+48 600 100 200"/>
+            </div>
+            <Field label="E-mail *" value={f.email} onChange={set("email")} type="email" placeholder="biuro@warsztat.pl" required/>
+            <Field label="Hasło *" value={f.password} onChange={set("password")} type="password" placeholder="Min. 8 znaków" required/>
+          </div>
+          {error&&<div style={{marginTop:12,padding:"10px 14px",background:T.redLt,border:`1px solid ${T.red}30`,borderRadius:8,fontSize:13,color:T.red,fontWeight:600}}>⚠ {error}</div>}
+          <div style={{marginTop:16,display:"flex",gap:10,flexDirection:"column"}}>
+            <Btn full onClick={register} loading={loading} icon="🚀">Załóż konto warsztatu</Btn>
+            <button onClick={onBack} style={{background:"none",border:"none",color:T.textMut,cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>← Powrót do logowania</button>
+          </div>
+          <div style={{marginTop:16,fontSize:11,color:T.textXs,textAlign:"center"}}>Rejestrując się akceptujesz Regulamin i Politykę Prywatności.<br/>Plan Trial — 14 dni bezpłatnie, bez karty kredytowej.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // LOGIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
-function LoginPage({onLogin}) {
+function LoginPage({onLogin,onRegister}) {
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
   const [loading,setLoading]=useState(false);
@@ -1325,8 +1378,139 @@ function Payments({invoices,clients,isMobile}) {
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SUPER ADMIN — zarządzanie warsztatami SaaS
+// ══════════════════════════════════════════════════════════════════════════════
+function SuperAdmin({isMobile}) {
+  const [tenants,setTenants]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const PLANS=[{v:"trial",l:"Trial (14 dni)"},{v:"basic",l:"Basic 99zl/mies"},{v:"pro",l:"Pro 199zl/mies"},{v:"enterprise",l:"Enterprise"}];
+  const PLAN_COLORS={trial:T.yellow,basic:T.brand,pro:T.green,enterprise:T.purple};
+
+  useEffect(()=>{
+    apiFetch("/tenants").then(setTenants).catch(()=>setTenants([])).finally(()=>setLoading(false));
+  },[]);
+
+  const changePlan=async(id,plan)=>{
+    try { await apiFetch("/tenants/"+id+"/plan",{method:"PATCH",body:{plan}}); setTenants(p=>p.map(t=>t.id===id?{...t,plan}:t)); }
+    catch(err){alert("Blad: "+err.message);}
+  };
+
+  return (
+    <div>
+      <SH title="Panel Super Admin" sub="Zarządzanie warsztatami WarsztatPro SaaS"/>
+      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:14,marginBottom:24}}>
+        <Stat label="Warsztaty" value={tenants.length} color={T.brand} icon="🏭"/>
+        <Stat label="Aktywne" value={tenants.filter(t=>t.active).length} color={T.green} icon="✅"/>
+        <Stat label="Trial" value={tenants.filter(t=>t.plan==="trial").length} color={T.yellow} icon="⏳"/>
+        <Stat label="Platne" value={tenants.filter(t=>t.plan!=="trial").length} color={T.purple} icon="💰"/>
+      </div>
+      {loading?<div style={{textAlign:"center",padding:40,color:T.textMut}}>Ladowanie...</div>:(
+        <Card noPad>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
+              <thead><tr style={{borderBottom:`2px solid ${T.border}`,background:T.bg}}>
+                {["ID","Warsztat","E-mail","Uzytkownicy","Plan","Aktywny",""].map(h=>(
+                  <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,color:T.textMut,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {tenants.map(t=>(
+                  <tr key={t.id} style={{borderBottom:`1px solid ${T.border}`}}>
+                    <td style={{padding:"12px 14px",fontFamily:"monospace",color:T.textMut,fontSize:12}}>{t.id}</td>
+                    <td style={{padding:"12px 14px"}}><div style={{fontWeight:700}}>{t.name}</div><div style={{fontSize:11,color:T.textMut}}>{t.slug}</div></td>
+                    <td style={{padding:"12px 14px",fontSize:13,color:T.textMut}}>{t.email}</td>
+                    <td style={{padding:"12px 14px",textAlign:"center",fontWeight:700}}>{t.user_count||0}</td>
+                    <td style={{padding:"12px 14px"}}>
+                      <select value={t.plan} onChange={e=>changePlan(t.id,e.target.value)}
+                        style={{...fldSt,padding:"4px 8px",fontSize:12,width:"auto",color:PLAN_COLORS[t.plan]||T.text,fontWeight:700}}>
+                        {PLANS.map(p=><option key={p.v} value={p.v}>{p.l}</option>)}
+                      </select>
+                    </td>
+                    <td style={{padding:"12px 14px"}}><Badge color={t.active?T.green:T.red} dot>{t.active?"Tak":"Nie"}</Badge></td>
+                    <td style={{padding:"12px 14px"}}><Btn sm outline color={T.brand} onClick={()=>window.open("mailto:"+t.email)}>Kontakt</Btn></td>
+                  </tr>
+                ))}
+                {tenants.length===0&&<tr><td colSpan={7} style={{padding:32,textAlign:"center",color:T.textXs}}>Brak zarejestrowanych warsztatow</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function KSeF({invoices,setInvoices,isMobile}) {
-  const pending=invoices.filter(i=>i.ksef_status!=="wysłana");
+  const [sending,setSending]=useState(false);
+  const [sendingId,setSendingId]=useState(null);
+  const pending=invoices.filter(i=>!i.ksef_status||i.ksef_status==="pending"||i.ksef_status==="");
+  const sent=invoices.filter(i=>i.ksef_status==="sent"||i.ksef_status==="wysłana");
+
+  const sendOne=async(inv)=>{
+    setSendingId(inv.id);
+    try {
+      const data=await apiFetch("/ksef/send/"+inv.id,{method:"POST"});
+      setInvoices(p=>p.map(i=>i.id===inv.id?{...i,ksef_status:"sent",ksef_number:data.ksef_number}:i));
+      if(data.mode==="sandbox") alert("KSeF Sandbox OK!\nNumer: "+data.ksef_number+"\n\n"+data.info);
+    } catch(err){alert("Blad KSeF: "+err.message);}
+    setSendingId(null);
+  };
+
+  const sendAll=async()=>{
+    setSending(true);
+    try {
+      const data=await apiFetch("/ksef/send-all",{method:"POST"});
+      setInvoices(p=>p.map(i=>{const r=(data.results||[]).find(x=>x.id===i.id);return r&&r.ok?{...i,ksef_status:"sent",ksef_number:r.ksef_number}:i;}));
+      alert("Wyslano "+data.sent+" faktur do KSeF");
+    } catch(err){alert("Blad: "+err.message);}
+    setSending(false);
+  };
+
+  return (
+    <div>
+      <SH title="KSeF – e-Faktury" sub="Krajowy System e-Faktur · Ministerstwo Finansow"/>
+      <div style={{background:T.yellowLt,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:14,marginBottom:20,fontSize:13,color:T.yellow,fontWeight:600}}>
+        Tryb: Sandbox MF. Aby wysylac prawdziwe faktury — zarejestruj sie na podatki.gov.pl i dodaj token do Ustawien → KSeF.
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+        <Stat label="Do wyslania" value={pending.length} color={T.yellow} icon="📤"/>
+        <Stat label="Wyslane" value={sent.length} color={T.green} icon="✅"/>
+        <Stat label="Bledy" value={invoices.filter(i=>i.ksef_status==="error").length} color={T.red} icon="❌"/>
+      </div>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontWeight:800}}>Faktury do wyslania ({pending.length})</div>
+          <Btn disabled={pending.length===0||sending} loading={sending} onClick={sendAll}>Wyslij wszystkie</Btn>
+        </div>
+        {pending.length===0&&<div style={{color:T.green,textAlign:"center",padding:20,fontWeight:600}}>Wszystkie faktury wyslane do KSeF</div>}
+        {pending.map(inv=>(
+          <div key={inv.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
+            <div>
+              <div style={{fontWeight:800,color:T.brand}}>{inv.number}</div>
+              <div style={{fontSize:12,color:T.textMut}}>{fmtDate(inv.date_issued)} · {fmt(inv.gross)} zl · {inv.client_name||inv.buyer_name||"—"}</div>
+            </div>
+            <Btn sm loading={sendingId===inv.id} onClick={()=>sendOne(inv)}>Wyslij do KSeF</Btn>
+          </div>
+        ))}
+        {sent.length>0&&(
+          <>
+            <div style={{fontWeight:800,marginTop:16,marginBottom:10}}>Wyslane ({sent.length})</div>
+            {sent.map(inv=>(
+              <div key={inv.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${T.border}`,opacity:.7}}>
+                <div>
+                  <div style={{fontWeight:700}}>{inv.number}</div>
+                  {inv.ksef_number&&<div style={{fontSize:11,color:T.textMut,fontFamily:"monospace"}}>{inv.ksef_number}</div>}
+                </div>
+                <Badge color={T.green} bg={T.greenLt} dot>Wyslana</Badge>
+              </div>
+            ))}
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
   return (
     <div>
       <SH title="KSeF – e-Faktury" sub="Krajowy System e-Faktur · Ministerstwo Finansów"/>
@@ -1608,6 +1792,7 @@ export default function App() {
   const [tab,setTab]=useState("dashboard");
   const [modal,setModal]=useState(null);
   const [loading,setLoading]=useState(true);
+  const [showRegister,setShowRegister]=useState(false);
   const [isMobile,setIsMobile]=useState(window.innerWidth<768);
 
   // Data state
@@ -1781,6 +1966,7 @@ export default function App() {
           {tab==="ksef"      &&<KSeF invoices={invoices} setInvoices={setInvoices} isMobile={isMobile}/>}
           {tab==="users"     &&<UsersScreen currentUser={user}/>}
           {tab==="settings"  &&<Settings user={user} onLogout={handleLogout}/>}
+          {tab==="superadmin"&&<SuperAdmin isMobile={isMobile}/>}
         </div>
       </main>
 
