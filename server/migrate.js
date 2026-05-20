@@ -238,7 +238,7 @@ async function migrate() {
     ON CONFLICT DO NOTHING;
   `);
 
-    -- KSEF KOLEJKA
+    -- KSEF QUEUE
     CREATE TABLE IF NOT EXISTS ksef_queue (
       id          SERIAL PRIMARY KEY,
       tenant_id   INTEGER REFERENCES tenants(id) DEFAULT 1,
