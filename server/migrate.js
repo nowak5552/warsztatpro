@@ -213,32 +213,8 @@ async function migrate() {
       sent_at     TIMESTAMP,
       created_at  TIMESTAMP DEFAULT NOW()
     );
-  `);
 
-  // Domyślni użytkownicy
-  const bcrypt = require("bcryptjs");
-  const adminPass = await bcrypt.hash("Admin123!", 10);
-  const mechPass  = await bcrypt.hash("Mechanik123!", 10);
-  const recPass   = await bcrypt.hash("Recepcja123!", 10);
-
-  await pool.query(`
-    INSERT INTO users (name, email, password, role, phone, avatar) VALUES
-      ('Patryk Nowakowski', 'admin@mod4cars.eu', $1, 'admin', '600 100 200', 'PN'),
-      ('Piotr Wiśniewski',  'piotr@mod4cars.eu', $2, 'mechanik', '601 200 300', 'PW'),
-      ('Marek Adamski',     'marek@mod4cars.eu', $2, 'mechanik', '602 300 400', 'MA'),
-      ('Anna Nowak',        'anna@mod4cars.eu',  $3, 'recepcja', '603 400 500', 'AN')
-    ON CONFLICT (email) DO NOTHING;
-  `, [adminPass, mechPass, recPass]);
-
-  // Przykładowi klienci
-  await pool.query(`
-    INSERT INTO clients (name, nip, phone, email, address, city) VALUES
-      ('Jan Kowalski', '1234567890', '600 100 200', 'jan@example.pl', 'ul. Lipowa 5', '00-001 Warszawa'),
-      ('AUTO SERWIS Nowak Sp. z o.o.', '9876543210', '500 200 300', 'biuro@autonowak.pl', 'ul. Motorowa 12', '30-001 Kraków')
-    ON CONFLICT DO NOTHING;
-  `);
-
-    -- KSEF QUEUE
+    -- KSEF KOLEJKA
     CREATE TABLE IF NOT EXISTS ksef_queue (
       id          SERIAL PRIMARY KEY,
       tenant_id   INTEGER REFERENCES tenants(id) DEFAULT 1,
@@ -252,14 +228,37 @@ async function migrate() {
     );
 
     -- Dodaj tenant_id do istniejacych tabel (jezeli nie istnieje)
-    ALTER TABLE clients ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE clients  ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
     ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
-    ALTER TABLE parts ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE orders   ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE parts    ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
     ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
     ALTER TABLE calendar ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
-    ALTER TABLE sms_log ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE sms_log  ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+  `);
+
+  // Domyślni użytkownicy
+  const bcrypt = require("bcryptjs");
+  const adminPass = await bcrypt.hash("Admin123!", 10);
+  const mechPass  = await bcrypt.hash("Mechanik123!", 10);
+  const recPass   = await bcrypt.hash("Recepcja123!", 10);
+
+  await pool.query(`
+    INSERT INTO users (name, email, password, role, phone, avatar) VALUES
+      ('Patryk Nowakowski', 'admin@mod4cars.eu', $1, 'admin',    '600 100 200', 'PN'),
+      ('Piotr Wiśniewski',  'piotr@mod4cars.eu', $2, 'mechanik', '601 200 300', 'PW'),
+      ('Marek Adamski',     'marek@mod4cars.eu', $2, 'mechanik', '602 300 400', 'MA'),
+      ('Anna Nowak',        'anna@mod4cars.eu',  $3, 'recepcja', '603 400 500', 'AN')
+    ON CONFLICT (tenant_id, email) DO NOTHING;
+  `, [adminPass, mechPass, recPass]);
+
+  // Przykładowi klienci
+  await pool.query(`
+    INSERT INTO clients (name, nip, phone, email, address, city) VALUES
+      ('Jan Kowalski',                  '1234567890', '600 100 200', 'jan@example.pl',      'ul. Lipowa 5',    '00-001 Warszawa'),
+      ('AUTO SERWIS Nowak Sp. z o.o.', '9876543210', '500 200 300', 'biuro@autonowak.pl',  'ul. Motorowa 12', '30-001 Kraków')
+    ON CONFLICT DO NOTHING;
   `);
 
   console.log("✅ Migracja zakończona pomyślnie!");
