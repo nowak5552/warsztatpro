@@ -1983,7 +1983,7 @@ export default function App() {
         </nav>
       )}
 
-            {modal?.type==="edit_order"&&<EditOrderModal order={modal.order} clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{await apiFetch("/orders/"+modal.order.id,{method:"PUT",body:o});setOrders(p=>p.map(x=>x.id===modal.order.id?{...x,...o}:x));}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>
+      {modal?.type==="edit_order"&&<EditOrderModal order={modal.order} clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{await apiFetch("/orders/"+modal.order.id,{method:"PUT",body:o});setOrders(p=>p.map(x=>x.id===modal.order.id?{...x,...o}:x));}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>
       {/* MODALS */}
       {modal?.type==="new_order"&&<NewOrderModal clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{const d=await apiFetch("/orders",{method:"POST",body:o});setOrders(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
       {modal?.type==="new_client"&&<NewClientModal onClose={()=>setModal(null)} onSave={async c=>{try{const d=await apiFetch("/clients",{method:"POST",body:c});setClients(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
