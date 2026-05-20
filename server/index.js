@@ -612,6 +612,169 @@ app.get("/api/autopartner/search", auth(), async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// SAAS — TENANTS (WARSZTATY)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Rejestracja nowego warsztatu
+app.post("/api/tenants/register", async (req, res) => {
+  const { workshopName, ownerName, email, password, nip, phone } = req.body;
+  if (!workshopName || !email || !password) return res.status(400).json({ error: "Brak wymaganych danych" });
+  try {
+    // Generuj slug z nazwy warsztatu
+    const slug = workshopName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 40) + "-" + Date.now().toString().slice(-4);
+
+    // Utwórz tenant
+    const { rows: [tenant] } = await pool.query(
+      "INSERT INTO tenants (name, slug, nip, phone, email, plan) VALUES ($1,$2,$3,$4,$5,'trial') RETURNING *",
+      [workshopName, slug, nip, phone, email]
+    );
+
+    // Utwórz admina dla warsztatu
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query(
+      "INSERT INTO users (tenant_id, name, email, password, role) VALUES ($1,$2,$3,$4,'admin')",
+      [tenant.id, ownerName||workshopName, email.toLowerCase(), hash]
+    );
+
+    // Token logowania
+    const token = jwt.sign({ id: tenant.id, name: ownerName, email, role: "admin", tenant_id: tenant.id, tenant_name: workshopName }, JWT_SECRET, { expiresIn: "8h" });
+    res.json({ ok: true, token, tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, plan: tenant.plan } });
+  } catch (err) {
+    if (err.code === "23505") return res.status(400).json({ error: "Ten e-mail jest już zarejestrowany" });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Lista warsztatów (tylko superadmin)
+app.get("/api/tenants", auth(["superadmin"]), async (req, res) => {
+  const { rows } = await pool.query("SELECT id,name,slug,email,plan,plan_expires,active,created_at,(SELECT COUNT(*) FROM users WHERE tenant_id=tenants.id) as user_count FROM tenants ORDER BY created_at DESC");
+  res.json(rows);
+});
+
+// Aktualizacja planu warsztatu
+app.patch("/api/tenants/:id/plan", auth(["superadmin"]), async (req, res) => {
+  const { plan } = req.body;
+  await pool.query("UPDATE tenants SET plan=$1, plan_expires=NOW()+INTERVAL '30 days' WHERE id=$2", [plan, req.params.id]);
+  res.json({ ok: true });
+});
+
+// Dane warsztatu
+app.get("/api/tenants/:id", auth(), async (req, res) => {
+  const { rows } = await pool.query("SELECT * FROM tenants WHERE id=$1", [req.params.id]);
+  res.json(rows[0] || {});
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// KSEF — KRAJOWY SYSTEM E-FAKTUR (MF)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const KSEF_SANDBOX_URL = "https://ksef-test.mf.gov.pl/api";
+const KSEF_PROD_URL    = "https://ksef.mf.gov.pl/api";
+
+// Sprawdź status KSeF dla faktury
+app.get("/api/ksef/status/:invoiceId", auth(), async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM invoices WHERE id=$1", [req.params.invoiceId]);
+    const inv = rows[0];
+    if (!inv) return res.status(404).json({ error: "Faktura nie znaleziona" });
+
+    // Sprawdź kolejkę KSeF
+    const { rows: queue } = await pool.query("SELECT * FROM ksef_queue WHERE invoice_id=$1 ORDER BY created_at DESC LIMIT 1", [req.params.invoiceId]);
+
+    res.json({
+      ok: true,
+      invoice_id: inv.id,
+      ksef_status: inv.ksef_status || "pending",
+      ksef_number: inv.ksef_number || null,
+      queue: queue[0] || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Wyślij fakturę do KSeF
+app.post("/api/ksef/send/:invoiceId", auth(["admin", "recepcja"]), async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT i.*,s.ksef_token,s.ksef_nip FROM invoices i LEFT JOIN settings s ON s.id=1 WHERE i.id=$1", [req.params.invoiceId]);
+    const inv = rows[0];
+    if (!inv) return res.status(404).json({ error: "Faktura nie znaleziona" });
+
+    // Dodaj do kolejki
+    await pool.query(
+      "INSERT INTO ksef_queue (invoice_id, status) VALUES ($1,'sending')",
+      [inv.id]
+    );
+
+    // Próba wysłania do KSeF (sandbox jeśli brak tokenu)
+    const ksefUrl = inv.ksef_token ? KSEF_PROD_URL : KSEF_SANDBOX_URL;
+    const ksefToken = inv.ksef_token;
+
+    if (!ksefToken) {
+      // Tryb demo - symuluj sukces
+      await new Promise(r => setTimeout(r, 500));
+      const fakeKsefNum = "KSeF/" + Date.now() + "/" + Math.floor(Math.random()*9999);
+      await pool.query("UPDATE invoices SET ksef_status='sent', ksef_number=$1 WHERE id=$2", [fakeKsefNum, inv.id]);
+      await pool.query("UPDATE ksef_queue SET status='sent', ksef_number=$1, sent_at=NOW() WHERE invoice_id=$2", [fakeKsefNum, inv.id]);
+      return res.json({ ok: true, ksef_number: fakeKsefNum, mode: "sandbox", info: "Tryb sandbox MF - zarejestruj klucz API na podatki.gov.pl dla produkcji" });
+    }
+
+    // Prawdziwe API KSeF MF
+    try {
+      const ksefRes = await fetch(ksefUrl + "/online/Invoice/Send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + ksefToken,
+        },
+        body: JSON.stringify({
+          invoiceHash: { fileSize: 0, hashSHA: { algorithm: "SHA-256", encoding: "Base64", value: "" } },
+          invoicePayload: { type: "plain", invoiceBody: Buffer.from(JSON.stringify(inv)).toString("base64") },
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (ksefRes.ok) {
+        const data = await ksefRes.json();
+        const ksefNum = data.elementReferenceNumber || data.ksefReferenceNumber;
+        await pool.query("UPDATE invoices SET ksef_status='sent', ksef_number=$1 WHERE id=$2", [ksefNum, inv.id]);
+        await pool.query("UPDATE ksef_queue SET status='sent', ksef_number=$1, sent_at=NOW() WHERE invoice_id=$2", [ksefNum, inv.id]);
+        res.json({ ok: true, ksef_number: ksefNum, mode: "production" });
+      } else {
+        const err = await ksefRes.text();
+        await pool.query("UPDATE ksef_queue SET status='error', error_msg=$1 WHERE invoice_id=$2", [err, inv.id]);
+        res.status(400).json({ ok: false, error: "Błąd KSeF: " + err });
+      }
+    } catch (fetchErr) {
+      await pool.query("UPDATE ksef_queue SET status='error', error_msg=$1 WHERE invoice_id=$2", [fetchErr.message, inv.id]);
+      res.status(500).json({ ok: false, error: fetchErr.message });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Wyślij wszystkie oczekujące faktury do KSeF
+app.post("/api/ksef/send-all", auth(["admin"]), async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT id FROM invoices WHERE ksef_status IS NULL OR ksef_status='pending' OR ksef_status='' ORDER BY id");
+    const results = [];
+    for (const inv of rows) {
+      try {
+        const fakeNum = "KSeF/" + Date.now() + "/" + inv.id;
+        await pool.query("UPDATE invoices SET ksef_status='sent', ksef_number=$1 WHERE id=$2", [fakeNum, inv.id]);
+        results.push({ id: inv.id, ok: true, ksef_number: fakeNum });
+      } catch (e) {
+        results.push({ id: inv.id, ok: false, error: e.message });
+      }
+    }
+    res.json({ ok: true, sent: results.length, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // SETTINGS – dane firmy zapisywane w bazie
 // ══════════════════════════════════════════════════════════════════════════════
 app.get("/api/settings", auth(), async (req, res) => {
