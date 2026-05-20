@@ -30,18 +30,47 @@ async function migrate() {
     -- Domyślne ustawienia (puste – admin wypełni)
     INSERT INTO settings (id) VALUES (1) ON CONFLICT DO NOTHING;
 
+    -- WARSZTATY (SaaS multi-tenant)
+    CREATE TABLE IF NOT EXISTS tenants (
+      id          SERIAL PRIMARY KEY,
+      name        VARCHAR(200) NOT NULL,
+      slug        VARCHAR(50) UNIQUE NOT NULL,
+      nip         VARCHAR(20),
+      address     VARCHAR(200),
+      city        VARCHAR(100),
+      phone       VARCHAR(30),
+      email       VARCHAR(100),
+      bank        VARCHAR(50),
+      plan        VARCHAR(20) DEFAULT 'trial' CHECK (plan IN ('trial','basic','pro','enterprise')),
+      plan_expires TIMESTAMP DEFAULT (NOW() + INTERVAL '14 days'),
+      active      BOOLEAN DEFAULT true,
+      logo_url    TEXT,
+      ksef_nip    VARCHAR(20),
+      ksef_token  TEXT,
+      agent_url   VARCHAR(200) DEFAULT 'http://localhost:8765',
+      posnet_port VARCHAR(20) DEFAULT 'COM3',
+      terminal_id VARCHAR(50),
+      terminal_key TEXT,
+      created_at  TIMESTAMP DEFAULT NOW()
+    );
+
+    -- Domyślny tenant (istniejący warsztat)
+    INSERT INTO tenants (id, name, slug, email) VALUES (1, 'mod4cars', 'mod4cars', 'admin@mod4cars.eu') ON CONFLICT DO NOTHING;
+
     -- UŻYTKOWNICY
     CREATE TABLE IF NOT EXISTS users (
       id          SERIAL PRIMARY KEY,
+      tenant_id   INTEGER REFERENCES tenants(id) ON DELETE CASCADE DEFAULT 1,
       name        VARCHAR(100) NOT NULL,
-      email       VARCHAR(100) UNIQUE NOT NULL,
+      email       VARCHAR(100) NOT NULL,
       password    VARCHAR(255) NOT NULL,
-      role        VARCHAR(20) NOT NULL DEFAULT 'mechanik' CHECK (role IN ('admin','mechanik','recepcja')),
+      role        VARCHAR(20) NOT NULL DEFAULT 'mechanik' CHECK (role IN ('superadmin','admin','mechanik','recepcja')),
       phone       VARCHAR(20),
       avatar      VARCHAR(4),
       active      BOOLEAN DEFAULT true,
       last_login  TIMESTAMP,
-      created_at  TIMESTAMP DEFAULT NOW()
+      created_at  TIMESTAMP DEFAULT NOW(),
+      UNIQUE(tenant_id, email)
     );
 
     -- KLIENCI
@@ -207,6 +236,30 @@ async function migrate() {
       ('Jan Kowalski', '1234567890', '600 100 200', 'jan@example.pl', 'ul. Lipowa 5', '00-001 Warszawa'),
       ('AUTO SERWIS Nowak Sp. z o.o.', '9876543210', '500 200 300', 'biuro@autonowak.pl', 'ul. Motorowa 12', '30-001 Kraków')
     ON CONFLICT DO NOTHING;
+  `);
+
+    -- KSEF KOLEJKA
+    CREATE TABLE IF NOT EXISTS ksef_queue (
+      id          SERIAL PRIMARY KEY,
+      tenant_id   INTEGER REFERENCES tenants(id) DEFAULT 1,
+      invoice_id  INTEGER REFERENCES invoices(id),
+      status      VARCHAR(20) DEFAULT 'pending',
+      ksef_number VARCHAR(100),
+      ksef_ref    VARCHAR(200),
+      error_msg   TEXT,
+      sent_at     TIMESTAMP,
+      created_at  TIMESTAMP DEFAULT NOW()
+    );
+
+    -- Dodaj tenant_id do istniejacych tabel (jezeli nie istnieje)
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE parts ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE calendar ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE sms_log ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS tenant_id INTEGER DEFAULT 1;
   `);
 
   console.log("✅ Migracja zakończona pomyślnie!");
