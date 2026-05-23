@@ -216,13 +216,69 @@ app.post("/api/orders", auth(), async (req, res) => {
   res.json({ ...order, order_no });
 });
 
+app.get("/api/orders/:id/items", auth(), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT id,type,name,qty,unit_price,vat FROM order_items WHERE order_id=$1 ORDER BY id",
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.put("/api/orders/:id", auth(), async (req, res) => {
-  const { status, priority, mechanic_id, description, notes, date_deadline } = req.body;
-  await pool.query(
-    "UPDATE orders SET status=$1,priority=$2,mechanic_id=$3,description=$4,notes=$5,date_deadline=$6 WHERE id=$7",
-    [status, priority, mechanic_id, description, notes, date_deadline, req.params.id]
-  );
-  res.json({ ok: true });
+  const client = await pool.connect();
+  try {
+    const { client_id, vehicle_id, mechanic_id, priority, status, description, notes, mileage_in, date_deadline, items } = req.body;
+
+    await client.query("BEGIN");
+
+    const { rows } = await client.query(
+      `UPDATE orders SET
+        client_id=$1, vehicle_id=$2, mechanic_id=$3, priority=$4, status=$5,
+        description=$6, notes=$7, mileage_in=$8, date_deadline=$9
+       WHERE id=$10
+       RETURNING *`,
+      [
+        client_id || null,
+        vehicle_id || null,
+        mechanic_id || null,
+        priority || "Normalny",
+        status || "Nowe",
+        description || "",
+        notes || "",
+        mileage_in || null,
+        date_deadline || null,
+        req.params.id,
+      ]
+    );
+
+    if (!rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Nie znaleziono zlecenia" });
+    }
+
+    if (Array.isArray(items)) {
+      await client.query("DELETE FROM order_items WHERE order_id=$1", [req.params.id]);
+      for (const it of items) {
+        if (!it?.name) continue;
+        await client.query(
+          "INSERT INTO order_items (order_id,type,name,qty,unit_price,vat) VALUES ($1,$2,$3,$4,$5,$6)",
+          [req.params.id, it.type || "labor", it.name, Number(it.qty) || 1, Number(it.unit_price) || 0, Number(it.vat) || 23]
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+    res.json({ ok: true, order: rows[0] });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
 });
 
 // !! USUWANIE ZLECEŃ !!
@@ -466,60 +522,49 @@ app.get("/api/vin/:vin", auth(), async (req, res) => {
   }
 });
 
-// ── GUS BIR – dane firmy po NIP ──────────────────────────────────────────────
-// Używa publicznego API regon.stat.gov.pl (wymaga klucza) lub CEIDG API
+// ── Dane firmy po NIP ─────────────────────────────────────────────────────────
+// Najpierw używa publicznej Białej Listy VAT MF (bez klucza), a potem zwraca czytelny błąd.
 app.get("/api/gus/:nip", auth(), async (req, res) => {
-  const nip = req.params.nip.replace(/\D/g, "");
+  const nip = String(req.params.nip || "").replace(/\D/g, "");
   if (nip.length !== 10) return res.status(400).json({ error: "NIP musi mieć 10 cyfr" });
 
-  // Walidacja sumy kontrolnej NIP
   const weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
-  const sum = weights.reduce((s, w, i) => s + w * +nip[i], 0);
-  if (sum % 11 !== +nip[9]) return res.status(400).json({ error: "Nieprawidłowy NIP (błędna suma kontrolna)" });
+  const sum = weights.reduce((s, w, i) => s + w * Number(nip[i]), 0);
+  if (sum % 11 !== Number(nip[9])) return res.status(400).json({ error: "Nieprawidłowy NIP (błędna suma kontrolna)" });
+
+  const today = new Date().toISOString().slice(0, 10);
 
   try {
-    // Próba 1: API REGON (wymaga klucza – ustaw GUS_KEY w .env)
-    if (process.env.GUS_KEY) {
-      // Tu byłoby wywołanie GUS BIR SOAP API – wymaga klucza z rejestracji
-      // https://api.stat.gov.pl/Home/RegonApi
+    const mfRes = await fetch(
+      `https://wl-api.mf.gov.pl/api/search/nip/${nip}?date=${today}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+
+    if (mfRes.ok) {
+      const mfData = await mfRes.json();
+      const subject = mfData?.result?.subject;
+      if (subject) {
+        const address = subject.workingAddress || subject.residenceAddress || "";
+        return res.json({
+          ok: true,
+          source: "MF",
+          nip,
+          name: subject.name || "",
+          address,
+          city: "",
+          regon: subject.regon || "",
+          accountNumbers: subject.accountNumbers || [],
+          statusVat: subject.statusVat || "",
+        });
+      }
     }
 
-    // Próba 2: Publiczne API CEIDG (Ministerstwo Rozwoju) – bezpłatne
-    try {
-      const ceidgRes = await fetch(
-        `https://dane.gov.pl/api/3/action/datastore_search?resource_id=5bc6dde8-8dc3-4bcf-9d24-e8d9a27b0681&q=${nip}&limit=1`,
-        { signal: AbortSignal.timeout(5000) }
-      );
-      if (ceidgRes.ok) {
-        const ceidgData = await ceidgRes.json();
-        const rec = ceidgData?.result?.records?.[0];
-        if (rec) {
-          return res.json({
-            ok: true,
-            source: "CEIDG",
-            nip,
-            name:    rec.firma || rec.imie + " " + rec.nazwisko || "",
-            address: (rec.ulica || "") + " " + (rec.nrNieruchomosci || ""),
-            city:    (rec.kodPocztowy || "") + " " + (rec.miejscowosc || ""),
-            regon:   rec.regon || "",
-          });
-        }
-      }
-    } catch {}
-
-    // Próba 3: Wbudowane dane przykładowe dla demo
-    return res.json({
-      ok: true,
-      source: "demo",
-      nip,
-      name:    `Firma ${nip.slice(-4)} Sp. z o.o.`,
-      address: "ul. Przykładowa 1",
-      city:    "00-001 Warszawa",
-      regon:   nip.slice(0, 9),
-      info:    "Aby pobierać pełne dane z GUS, zarejestruj się na api.stat.gov.pl i dodaj klucz GUS_KEY do pliku .env",
+    return res.status(404).json({
+      ok: false,
+      error: "Nie znaleziono firmy dla tego NIP w publicznym rejestrze MF. Sprawdź NIP albo skonfiguruj pełny GUS BIR API po stronie serwera.",
     });
   } catch (err) {
-    res.status(500).json({ error: "Błąd: " + err.message });
+    res.status(502).json({ error: "Nie udało się połączyć z rejestrem MF/GUS: " + err.message });
   }
 });
 
