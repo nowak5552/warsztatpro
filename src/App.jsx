@@ -1511,6 +1511,7 @@ function KSeF({invoices,setInvoices,isMobile}) {
       </Card>
     </div>
   );
+}
 
 function UsersScreen({currentUser}) {
   const [users,setUsers]=useState([]);
@@ -1736,7 +1737,7 @@ function Settings({user,onLogout}) {
               <label style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",display:"block",marginBottom:5}}>NIP *</label>
               <div style={{display:"flex"}}>
                 <input value={firm.nip||""} onChange={e=>setF("nip")(e.target.value)} placeholder="0000000000" style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1}}/>
-                <button onClick={fetchFirmByNip} disabled={gusLoading||!firm.nip} style={{padding:"0 12px",background:gusLoading?T.textXs:T.brand,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:!firm.nip?0.5:1}}>{gusLoading?"...":"Pobierz"}</button>
+                <button onClick={fetchFirmByNip} disabled={gusLoading||!firm.nip} style={{padding:"0 12px",background:gusLoading?T.textXs:T.brand,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:(!firm.nip?0.5:1)}}>{gusLoading?"...":"Pobierz"}</button>
               </div>
               {gusMsg&&<div style={{marginTop:6,padding:"8px 12px",background:gusMsg.ok?T.greenLt:T.redLt,borderRadius:8,fontSize:12,color:gusMsg.ok?T.green:T.red,fontWeight:600}}>{gusMsg.txt}</div>}
             </div>
@@ -1785,8 +1786,6 @@ function Settings({user,onLogout}) {
       </Card>
     </div>
   );
-}
-
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1987,7 +1986,6 @@ export default function App() {
         </nav>
       )}
 
-      {/* MODALS */}
       {modal?.type==="edit_order" && (
         <EditOrderModal
           order={modal.order}
@@ -2019,24 +2017,13 @@ export default function App() {
           }}
         />
       )}
-      {modal?.type==="new_order" && (
-        <NewOrderModal clients={clients} vehicles={vehicles} users={users} onClose={() => setModal(null)} onSave={async (o) => { try { const d = await apiFetch("/orders", { method: "POST", body: o }); setOrders(p => [d, ...p]); } catch (err) { alert("Blad: " + err.message); } setModal(null); }} />
-      )}
-      {modal?.type==="new_client" && (
-        <NewClientModal onClose={() => setModal(null)} onSave={async (c) => { try { const d = await apiFetch("/clients", { method: "POST", body: c }); setClients(p => [...p, d]); } catch (err) { alert("Blad: " + err.message); } setModal(null); }} />
-      )}
-      {modal?.type==="new_car" && (
-        <NewCarModal clients={clients} onClose={() => setModal(null)} onSave={async (v) => { try { const d = await apiFetch("/vehicles", { method: "POST", body: v }); setVehicles(p => [...p, d]); } catch (err) { alert("Blad: " + err.message); } setModal(null); }} />
-      )}
-      {modal?.type==="new_part" && (
-        <NewPartModal onClose={() => setModal(null)} onSave={async (p) => { try { const d = await apiFetch("/parts", { method: "POST", body: p }); setParts(prev => [...prev, d]); } catch (err) { alert("Blad: " + err.message); } setModal(null); }} />
-      )}
-      {modal?.type==="new_invoice" && (
-        <NewInvoiceModal order={modal.order} clients={clients} onClose={() => setModal(null)} onSave={async (inv) => { try { const d = await apiFetch("/invoices", { method: "POST", body: inv }); setInvoices(p => [d, ...p]); } catch (err) { alert("Blad: " + err.message); } setModal(null); }} />
-      )}
-      {modal?.type==="new_doc_standalone" && (
-        <NewInvoiceModal order={null} clients={clients} onClose={() => setModal(null)} onSave={async (inv) => { try { const d = await apiFetch("/invoices", { method: "POST", body: inv }); setInvoices(p => [d, ...p]); } catch (err) { alert("Blad: " + err.message); } setModal(null); }} />
-      )}
+      {/* MODALS */}
+      {modal?.type==="new_order"&&<NewOrderModal clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{const d=await apiFetch("/orders",{method:"POST",body:o});setOrders(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_client"&&<NewClientModal onClose={()=>setModal(null)} onSave={async c=>{try{const d=await apiFetch("/clients",{method:"POST",body:c});setClients(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_car"&&<NewCarModal clients={clients} onClose={()=>setModal(null)} onSave={async v=>{try{const d=await apiFetch("/vehicles",{method:"POST",body:v});setVehicles(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_part"&&<NewPartModal onClose={()=>setModal(null)} onSave={async p=>{try{const d=await apiFetch("/parts",{method:"POST",body:p});setParts(prev=>[...prev,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_invoice"&&<NewInvoiceModal order={modal.order} clients={clients} onClose={()=>setModal(null)} onSave={async inv=>{try{const d=await apiFetch("/invoices",{method:"POST",body:inv});setInvoices(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="new_doc_standalone"&&<NewInvoiceModal order={null} clients={clients} onClose={()=>setModal(null)} onSave={async inv=>{try{const d=await apiFetch("/invoices",{method:"POST",body:inv});setInvoices(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
     </div>
   );
 }
