@@ -1686,11 +1686,31 @@ function Settings({user,onLogout}) {
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState(false);
+  const [gusLoading,setGusLoading]=useState(false);
+  const [gusMsg,setGusMsg]=useState(null);
   const setF=k=>v=>setFirm(p=>({...p,[k]:v}));
 
   useEffect(()=>{
     apiFetch("/settings").then(d=>{ if(d) setFirm(d); }).catch(()=>{}).finally(()=>setLoading(false));
   },[]);
+
+  const fetchFirmByNip=async()=>{
+    const nip=String(firm.nip||"").replace(/\D/g,"");
+    if(nip.length!==10){setGusMsg({ok:false,txt:"Wpisz poprawny NIP (10 cyfr)"});return;}
+    setGusLoading(true);setGusMsg(null);
+    try {
+      const data=await apiFetch("/gus/"+nip);
+      if(data.ok){
+        setFirm(p=>({...p,name:data.name||p.name,address:data.address||p.address,city:data.city||p.city,ksef_nip:p.ksef_nip||nip}));
+        setGusMsg({ok:true,txt:"Dane pobrane dla NIP: "+nip+" (źródło: "+(data.source||"rejestr")+")"});
+      } else {
+        setGusMsg({ok:false,txt:data.error||"Nie znaleziono firmy"});
+      }
+    } catch(err){
+      setGusMsg({ok:false,txt:"Błąd: "+err.message});
+    }
+    setGusLoading(false);
+  };
 
   const save=async()=>{
     setSaving(true);
@@ -1698,7 +1718,7 @@ function Settings({user,onLogout}) {
       await apiFetch("/settings",{method:"POST",body:firm});
       setSaved(true);
       setTimeout(()=>setSaved(false),3000);
-    } catch(err){ alert("Blad zapisywania: "+err.message); }
+    } catch(err){ alert("Błąd zapisywania: "+err.message); }
     setSaving(false);
   };
 
@@ -1712,7 +1732,14 @@ function Settings({user,onLogout}) {
         <div style={{display:"grid",gap:12}}>
           <Field label="Nazwa firmy *" value={firm.name} onChange={setF("name")} placeholder="np. Auto Serwis XYZ Sp. z o.o." required/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <Field label="NIP *" value={firm.nip} onChange={setF("nip")} placeholder="0000000000" required/>
+            <div>
+              <label style={{fontSize:11,color:T.textMut,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",display:"block",marginBottom:5}}>NIP *</label>
+              <div style={{display:"flex"}}>
+                <input value={firm.nip||""} onChange={e=>setF("nip")(e.target.value)} placeholder="0000000000" style={{...fldSt,borderRadius:"9px 0 0 9px",flex:1}}/>
+                <button onClick={fetchFirmByNip} disabled={gusLoading||!firm.nip} style={{padding:"0 12px",background:gusLoading?T.textXs:T.brand,color:"#fff",border:"none",borderRadius:"0 9px 9px 0",fontFamily:"inherit",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap",opacity:!firm.nip?.5:1}}>{gusLoading?"...":"Pobierz"}</button>
+              </div>
+              {gusMsg&&<div style={{marginTop:6,padding:"8px 12px",background:gusMsg.ok?T.greenLt:T.redLt,borderRadius:8,fontSize:12,color:gusMsg.ok?T.green:T.red,fontWeight:600}}>{gusMsg.txt}</div>}
+            </div>
             <Field label="Telefon" value={firm.phone} onChange={setF("phone")} placeholder="+48 22 123 45 67"/>
           </div>
           <Field label="Adres (ulica i numer)" value={firm.address} onChange={setF("address")} placeholder="ul. Warsztatowa 1"/>
@@ -1958,7 +1985,7 @@ export default function App() {
         </nav>
       )}
 
-      {modal?.type==="edit_order"&&<EditOrderModal order={modal.order} clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{await apiFetch("/orders/"+modal.order.id,{method:"PUT",body:o});setOrders(p=>p.map(x=>x.id===modal.order.id?{...x,...o}:x));}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
+      {modal?.type==="edit_order"&&<EditOrderModal order={modal.order} clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{await apiFetch("/orders/"+modal.order.id,{method:"PUT",body:o});const client=clients.find(c=>c.id===+o.client_id);const vehicle=vehicles.find(v=>v.id===+o.vehicle_id);const mechanic=users.find(u=>u.id===+o.mechanic_id);setOrders(p=>p.map(x=>x.id===modal.order.id?{...x,...o,client_name:client?.name||x.client_name,client_phone:client?.phone||x.client_phone,make:vehicle?.make||x.make,model:vehicle?.model||x.model,plate:vehicle?.plate||x.plate,mechanic_name:mechanic?.name||x.mechanic_name,items:o.items||x.items}:x));setModal(null);}catch(err){alert("Błąd: "+err.message);}}}/>}
       {/* MODALS */}
       {modal?.type==="new_order"&&<NewOrderModal clients={clients} vehicles={vehicles} users={users} onClose={()=>setModal(null)} onSave={async o=>{try{const d=await apiFetch("/orders",{method:"POST",body:o});setOrders(p=>[d,...p]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
       {modal?.type==="new_client"&&<NewClientModal onClose={()=>setModal(null)} onSave={async c=>{try{const d=await apiFetch("/clients",{method:"POST",body:c});setClients(p=>[...p,d]);}catch(err){alert("Blad: "+err.message);}setModal(null);}}/>}
@@ -2127,7 +2154,7 @@ function NewClientModal({onClose,onSave}) {
       const data=await apiFetch("/gus/"+nip);
       if(data.ok){
         setF(p=>({...p,name:data.name||p.name,address:data.address||p.address,city:data.city||p.city,regon:data.regon||p.regon}));
-        const src=data.source==="CEIDG"?"CEIDG (Ministerstwo Rozwoju)":"GUS";
+        const src=data.source==="MF"?"Biała Lista VAT MF":(data.source==="CEIDG"?"CEIDG (Ministerstwo Rozwoju)":"GUS") ;
         setGusMsg({ok:true,txt:"Dane pobrane z "+src+" dla NIP: "+nip+(data.info?" – "+data.info:"")});
       } else {
         setGusMsg({ok:false,txt:data.error||"Nie znaleziono firmy"});
@@ -2362,13 +2389,13 @@ function EditOrderModal({order,clients,vehicles,users,onClose,onSave}) {
   const setItem=(i,k,v)=>setItems(p=>p.map((x,j)=>j===i?{...x,[k]:v}:x));
 
   // Ładuj pozycje zlecenia jeśli nie ma
-  useState(()=>{
-    if(!order.items){
+  useEffect(()=>{
+    if(!order.items || order.items.length===0){
       apiFetch("/orders/"+order.id+"/items").then(data=>{
         if(data&&data.length>0) setItems(data);
       }).catch(()=>{});
     }
-  },[]);
+  },[order.id]);
 
   const handleSave=async()=>{
     setLoading(true);
