@@ -1,11 +1,11 @@
 {
   "name": "wp-front",
-  "private": true,
   "version": "1.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "dev": "vite"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.7.0",
