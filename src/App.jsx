@@ -1511,6 +1511,7 @@ function KSeF({invoices,setInvoices,isMobile}) {
       </Card>
     </div>
   );
+}
 
 function UsersScreen({currentUser}) {
   const [users,setUsers]=useState([]);
@@ -1790,7 +1791,6 @@ function Settings({user,onLogout}) {
 // ══════════════════════════════════════════════════════════════════════════════
 // ROOT APP
 // ══════════════════════════════════════════════════════════════════════════════
-}
 export default function App() {
   const [user,setUser]=useState(null);
   const [tab,setTab]=useState("dashboard");
